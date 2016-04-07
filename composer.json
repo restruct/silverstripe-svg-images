@@ -1,0 +1,21 @@
+{
+    "name": "micschk/silverstripe-svg-images",
+    "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
+    "type": "silverstripe-module",
+    "keywords": [
+        "silverstripe"
+    ],
+    "homepage": "http://github.com/micschk/silverstripe-svg-images",
+    "authors": [
+        {
+            "name": "Restruct web & apps",
+            "email": "dev@restruct.nl"
+        }
+    ],
+    "require": {
+        "silverstripe/cms": "~3.1"
+    },
+    "extra": {
+        "installer-name": "svg-images"
+    }
+}
