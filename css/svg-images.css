@@ -1,3 +1,5 @@
-.focuspoint-field img[src$="svg"] {
-    width: 100%;
+/* .focuspoint-field  */
+img[src$="svg"] {
+    max-width: 100%;
+    height: auto;
 }

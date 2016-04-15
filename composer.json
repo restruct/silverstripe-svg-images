@@ -15,6 +15,9 @@
     "require": {
         "silverstripe/cms": "~3.1"
     },
+    "suggest": {
+        "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
+    },
     "extra": {
         "installer-name": "svg-images"
     }

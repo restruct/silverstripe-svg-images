@@ -91,4 +91,31 @@ class SVGImage extends \Image
         return call_user_func_array('parent::getFormattedImage',func_get_args());
     }
 
+
+    //
+    // SVGTemplate integration
+    //
+    public function IsSVG(){
+        if($this->getExtension()=='svg') {
+//            var_dump('svg');
+            return true;
+        }
+        return false;
+    }
+
+    public function SVG($id = null){
+        if( ! $this->IsSVG() || ! class_exists('SVGImage_Template')) return false;
+        $fileparts = explode(DIRECTORY_SEPARATOR, $this->Filename);
+        $svg = new SVGImage_Template(array_pop($fileparts), $id);
+        $svg->customBasePath(implode(DIRECTORY_SEPARATOR, $fileparts));
+        return $svg;
+    }
+
+    public function SVG_RAW_Inline(){
+        $filePath = BASE_PATH . DIRECTORY_SEPARATOR . $this->Filename;
+        if (file_exists($filePath)) {
+            return file_get_contents($filePath);
+        }
+    }
+
 }
