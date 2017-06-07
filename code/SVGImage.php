@@ -3,6 +3,8 @@
 class SVGImage extends \Image
 {
 
+    private static $flush = false;
+
     public function getFileType(){
         if($this->getExtension()=='svg') return "SVG image - good for line drawings";
 
@@ -88,7 +90,20 @@ class SVGImage extends \Image
         if($this->getExtension()=='svg') return $this;
 
         // else just forward to regular Image class
-        return call_user_func_array('parent::getFormattedImage',func_get_args());
+        //return call_user_func_array('parent::getFormattedImage',func_get_args());
+
+        $args = func_get_args();
+
+        if($this->exists()) {
+            $cacheFile = call_user_func_array(array($this, "cacheFilename"), $args);
+
+            if(!file_exists(Director::baseFolder()."/".$cacheFile) || self::$flush) {
+                call_user_func_array(array($this, "generateFormattedImage"), $args);
+            }
+
+            $cached = new Image_Cached($cacheFile, false, $this);
+            return $cached;
+        }
     }
 
 
