@@ -1,19 +1,18 @@
 ---
 Name: svgimages
-After:
-  - 'framework/*'
-  - 'cms/*'
 ---
 LeftAndMain:
   extra_requirements_css:
     - 'svg-images/css/svg-images.css'
 
-File:
+SilverStripe\Assets\File:
   app_categories:
     image:
       - svg
+    image/supported:
+      - svg
   class_for_file_extension:
-    svg: SVGImage
+    svg: SVGImage\SVGImage
 
 # Optionally uncomment this to have has_one images loaded as SVG in case of .svg extension
 # You would also need to hack the core framework's ForeignKey class for this to work, see README

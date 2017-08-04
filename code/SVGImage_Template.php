@@ -1,5 +1,12 @@
 <?php
 
+namespace SVGImage;
+
+
+use SilverStripe\Dev\Debug;
+use SilverStripeSVG\SVGTemplate;
+
+
 // only extend if exists
 if(class_exists('SVGTemplate')) {
 

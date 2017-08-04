@@ -1,6 +1,19 @@
 <?php
 
-class SVGImage extends \Image
+namespace SVGImage;
+
+
+use SilverStripe\Assets\Image;
+use DOMDocument;
+use SilverStripe\Control\Director;
+use SilverStripe\Dev\Debug;
+
+
+/**
+ * Class SVGImage
+ * @package SVGImage
+ */
+class SVGImage extends Image
 {
 
     private static $flush = false;
