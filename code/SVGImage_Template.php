@@ -7,7 +7,7 @@ use SilverStripeSVG\SVGTemplate;
 
 
 // only extend if exists
-if(class_exists('SVGTemplate')) {
+if(class_exists(SVGTemplate::class)) {
 
     /**
      * Class SVGImage_Template

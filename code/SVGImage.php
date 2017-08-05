@@ -149,16 +149,29 @@ class SVGImage extends Image
         return false;
     }
 
-    public function SVG($id = null){
-        if( ! $this->IsSVG() || ! class_exists('SVGImage_Template')) return false;
-        $fileparts = explode(DIRECTORY_SEPARATOR, $this->Filename);
-        $svg = new SVGImage_Template(array_pop($fileparts), $id);
+    /**
+     * @param null $id
+     * @return bool|SVGImage_Template
+     */
+    public function SVG($id = null)
+    {
+        if (!$this->IsSVG() || !class_exists(SVGImage_Template::class)) {
+            return false;
+        }
+        $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
+        $fileName = array_pop($fileparts);
+        $svg = new SVGImage_Template($fileName, $id);
         $svg->customBasePath(implode(DIRECTORY_SEPARATOR, $fileparts));
         return $svg;
     }
 
-    public function SVG_RAW_Inline(){
-        $filePath = BASE_PATH . DIRECTORY_SEPARATOR . $this->Filename;
+    /**
+     * @return bool|string
+     */
+    public function SVG_RAW_Inline()
+    {
+        $filePath = BASE_PATH .  $this->getURL();
+
         if (file_exists($filePath)) {
             return file_get_contents($filePath);
         }
