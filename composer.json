@@ -20,5 +20,10 @@
     },
     "extra": {
         "installer-name": "svg-images"
+    },
+    "autoload": {
+        "psr-4": {
+            "SVGImage": "code/"
+        }
     }
 }
