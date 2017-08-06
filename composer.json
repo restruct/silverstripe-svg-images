@@ -1,5 +1,5 @@
 {
-    "name": "micschk/silverstripe-svg-images",
+    "name": "heyday/silverstripe-svg-images",
     "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
     "type": "silverstripe-module",
     "keywords": [
@@ -23,7 +23,7 @@
     },
     "autoload": {
         "psr-4": {
-            "SVGImage": "code/"
+            "SilverStripeSVGImage\\": "code/"
         }
     }
 }

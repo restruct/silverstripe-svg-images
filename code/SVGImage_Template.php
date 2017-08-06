@@ -1,6 +1,6 @@
 <?php
 
-namespace SVGImage;
+namespace SilverStripeSVGImage;
 
 
 use SilverStripeSVG\SVGTemplate;
