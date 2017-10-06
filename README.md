@@ -4,6 +4,16 @@ This works as-is with any files added via the AssetAdmin and many_many relations
 This module exposes the SVG template helpers/methods of the stevie-mayhew/silverstripe-svg module if that's 
 installed (recommended by composer). See 'Usage'.
 
+## Installation
+Allow svg as an extension on 'File' in config.yml:
+```
+File:
+  allowed_extensions:
+    - svg
+```
+
+Next, add svg to the list of allowed extensions in the htaccess file in the assets folder.
+
 ## Fresh codebases:
 Best option is to resort to many_manys with UploadField::setAllowedMaxFileNumber(1), since File/Upload tries
 to instantiate the relation's appointed classname for has_ones and so will resort to Image instead of SVGImage.
