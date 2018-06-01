@@ -4,6 +4,9 @@ This works as-is with any files added via the AssetAdmin and many_many relations
 This module exposes the SVG template helpers/methods of the stevie-mayhew/silverstripe-svg module if that's 
 installed (recommended by composer). See 'Usage'.
 
+## Requirments
+- SilverStripe CMS 4+
+
 ## Fresh codebases:
 Best option is to resort to many_manys with UploadField::setAllowedMaxFileNumber(1), since File/Upload tries
 to instantiate the relation's appointed classname for has_ones and so will resort to Image instead of SVGImage.
@@ -21,9 +24,9 @@ OR Add the following config to have UploadFields for has_one pointing to 'Image'
 which also uses injector for Image)
 
 ```yml
-Injector:
-  Image:
-    class: SVGImage
+SilverStripe\Core\Injector\Injector:
+  SilverStripe\Assets\Image:
+    class: SilverStripeSVGImage\SVGImage
 ```
 
 ## Allowing SVG in scaffolded UploadFields
@@ -32,20 +35,6 @@ Scaffolded UploadFields to 'Image' may need to be told to allow SVG images as we
 
 ```php
 $field->setAllowedFileCategories('image');
-```
-
-It's also possible to temporarily hack the framework /Framework/model/fieldtypes/ForeignKey around line 33 to make 
-scaffolded has_one UploadFields for Image relations allow SVGs (temporarily because this is currently fixed in master).
-
-```php
-    ...
-    if($hasOneClass && singleton($hasOneClass) instanceof Image) {
-        $field = new UploadField($relationName, $title);
-        // CHANGE:
-        //$field->getValidator()->setAllowedExtensions(array('jpg', 'jpeg', 'png', 'gif'));
-        // TO:
-        $field->setAllowedFileCategories('image');
-    } else ...
 ```
 
 ## Usage
@@ -62,10 +51,10 @@ For scaling/adding classes etc, this module integrates SVG template helpers (ste
 
 ```html
 <!-- add inline svg (the raw SVG file will be inserted, see the .SVG helper for more subtle inlining) -->
-{$Image.SVG_RAW_Inline}
+{$Image.SVG_RAW_Inline.RAW}
 
 <!-- Test for SVG and fallback to regular image methods, for example when the image may be multiple formats (eg SVG/PNG/JPG) -->
-<% if $Image.IsSVG %> {$Image.SVG_RAW_Inline} <% else %> $Image.SetWidth(1200) <% end_if %>
+<% if $Image.IsSVG %> {$Image.SVG_RAW_Inline.RAW} <% else %> $Image.SetWidth(1200) <% end_if %>
 
 
 ```
