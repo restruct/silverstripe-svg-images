@@ -6,7 +6,7 @@ namespace SilverStripeSVGImage;
 use SilverStripe\Assets\Image;
 use DOMDocument;
 use SilverStripe\Control\Director;
-
+use SilverStripeSVGImage\SVGImage_Template;
 
 /**
  * Class SVGImage
