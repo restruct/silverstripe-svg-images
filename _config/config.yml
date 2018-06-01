@@ -3,7 +3,7 @@ Name: svgimages
 ---
 SilverStripe\Admin\LeftAndMain:
   extra_requirements_css:
-    - 'svg-images/css/svg-images.css'
+    - 'micschk/silverstripe-svg-images:css/svg-images.css'
 
 SilverStripe\Assets\File:
   app_categories:
