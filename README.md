@@ -34,6 +34,8 @@ which also uses injector for Image)
 Injector:
   Image:
     class: SVGImage
+  Image_Cached:
+    class: SVGImage_Cached
 ```
 
 ## Allowing SVG in scaffolded UploadFields
