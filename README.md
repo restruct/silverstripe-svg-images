@@ -4,6 +4,9 @@ This works as-is with any files added via the AssetAdmin and many_many relations
 This module exposes the SVG template helpers/methods of the stevie-mayhew/silverstripe-svg module if that's 
 installed (recommended by composer). See 'Usage'.
 
+# WARNING: SVG Security
+SVGs are vulnerable to *a lot* of possible attack vectors, most of which are widely known and unpatched. Basically you should consider SVG a browser-executable format comparable to HTML/JS, but with virtually no exploit-protection built into browsers. In some circumstances, eg when parsing XML server side, SVGs could also pose server side risks like file inclusion (XML External Entity attack), fork bombs (Billion laughs) and probably dozens more. See 'Security considerations'.
+
 ## Installation
 Allow svg as an extension on 'File' in config.yml:
 ```
@@ -117,6 +120,13 @@ These options are also chainable.
 ```html
 {$SVG('name').fill('#45FABD').width(200).height(100).extraClass('awesome-svg')}
 ```
+
+## Security considerations
+Currently I don't know of any way to fully sanitize untrusted SVGs. Regular expressions are not suitable for the job and any PHP XML parsers are vulnerable to at least some attack vectors (like file inclusion). Here's a [thorough listing of known attack vectors](https://pypi.org/project/defusedxml/#php). 
+
+[DOMPurify](https://github.com/cure53/DOMPurify) is a browser/JS based library that seems to do a pretty good job (but it's JS/NodeJS, not PHP). PHP based libraries which provide some protection but use XML (possibly dangerous) XML parsing are [svg-sanitizer](https://github.com/darylldoyle/svg-sanitizer) & [SVG Sanitizer](https://github.com/alnorris/SVG-Sanitizer).
+
+As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an <img> tag provide a bit more security (eg no script execution) than inline SVG code.
 
 
 ### SVG cropping & additional manipulations (to be added to this module)
