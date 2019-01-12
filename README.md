@@ -124,9 +124,9 @@ These options are also chainable.
 ## Security considerations
 Currently I don't know of any way to fully sanitize untrusted SVGs. Regular expressions are not suitable for the job and any PHP XML parsers are vulnerable to at least some attack vectors (like file inclusion). Here's a [thorough listing of known attack vectors](https://pypi.org/project/defusedxml/#php). 
 
-[DOMPurify](https://github.com/cure53/DOMPurify) is a browser/JS based library that seems to do a pretty good job (but it's JS/NodeJS, not PHP). PHP based libraries which provide some protection but use XML (possibly dangerous) XML parsing are [svg-sanitizer](https://github.com/darylldoyle/svg-sanitizer) & [SVG Sanitizer](https://github.com/alnorris/SVG-Sanitizer).
+[DOMPurify](https://github.com/cure53/DOMPurify) is a browser/JS based library that seems to do a pretty good job (but it's JS/NodeJS, not PHP). PHP based libraries which provide some protection but use (possibly dangerous) XML parsing are [svg-sanitizer](https://github.com/darylldoyle/svg-sanitizer) & [SVG Sanitizer](https://github.com/alnorris/SVG-Sanitizer).
 
-As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an <img> tag provide a bit more security (eg no script execution) than inline SVG code.
+As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an img tag provide a bit more security (eg no script execution) than inline SVG code.
 
 
 ### SVG cropping & additional manipulations (to be added to this module)
