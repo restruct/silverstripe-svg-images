@@ -5,7 +5,7 @@ This module exposes the SVG template helpers/methods of the stevie-mayhew/silver
 installed (recommended by composer). See 'Usage'.
 
 # SVG Security
-SVGs are vulnerable to *a lot* of possible attack vectors, most of which are widely known and unpatched. Basically you should consider SVG a browser-executable format comparable to HTML/JS, but with virtually no exploit-protection built into browsers. In some circumstances, eg when parsing XML server side, SVGs could also pose server side risks like file inclusion (XML External Entity attack), fork bombs (Billion laughs) and probably dozens more. See 'Security considerations'.
+SVGs can expose *a lot* of possible attack vectors, most of which are widely known and unpatched. Basically you should consider SVG a browser-executable format comparable to HTML/JS, but with virtually no exploit-protection built into browsers. In some circumstances, eg when parsing XML server side, SVGs could also pose server side risks like file inclusion (XML External Entity attack), fork bombs (Billion laughs) and probably dozens more. See 'Security considerations'.
 
 As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an img tag provide a bit more security (eg no script execution) than inline SVG code.
 
