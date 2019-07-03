@@ -89,7 +89,7 @@ For scaling/adding classes etc, this module integrates SVG template helpers (ste
 ```
 
 Additional helper functions for width, height, size, fill & adding extra classes are exposed by the '.SVG' method.
-(Requires additional module: [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg])
+(Requires additional module: [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg)
 
 ```html
 <!-- add inline svg (slightly sanitized) -->
