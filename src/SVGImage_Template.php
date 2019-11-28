@@ -1,5 +1,9 @@
 <?php
 
+namespace Sunnysideup\SilverStripeSvg;
+
+use StevieMayhew\SilverStripeSVG\SVGTemplate;
+
 // only extend if exists
 if(class_exists('SVGTemplate')) {
 

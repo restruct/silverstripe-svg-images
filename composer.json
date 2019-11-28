@@ -17,5 +17,15 @@
     },
     "suggest": {
         "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
+    },
+    "autoload": {
+        "psr-4": {
+            "Sunnysideup\\SilverStripeSvg\\": "src/"
+        }
+    },
+    "extra": {
+        "expose": [
+            "css"
+        ]
     }
 }
