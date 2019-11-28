@@ -1,5 +1,5 @@
 {
-    "name": "micschk/silverstripe-svg-images",
+    "name": "sunnysideup/silverstripe-svg-images",
     "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
     "type": "silverstripe-module",
     "keywords": [
@@ -13,7 +13,7 @@
         }
     ],
     "require": {
-        "silverstripe/cms": "^3.5.4"
+        "silverstripe/cms": "~4.0"
     },
     "suggest": {
         "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
