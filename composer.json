@@ -1,7 +1,7 @@
 {
     "name": "sunnysideup/silverstripe-svg-images",
     "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
-    "type": "silverstripe-module",
+    "type": "silverstripe-vendormodule",
     "keywords": [
         "silverstripe"
     ],
