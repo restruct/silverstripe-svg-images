@@ -8,11 +8,37 @@ SilverStripe\Admin\LeftAndMain:
     - 'sunnysideup/silverstripe-svg-images:css/svg-images.css'
 
 SilverStripe\Assets\File:
+  allowed_extensions:
+    - svg
   app_categories:
     image:
+      - alpha
+      - als
+      - bmp
+      - cel
+      - gif
+      - ico
+      - icon
+      - jpeg
+      - jpg
+      - pcx
+      - png
+      - ps
+      - psd
+      - tif
+      - tiff
+      - svg
+    image/supported:
+      - gif
+      - jpeg
+      - jpg
+      - png
+      - bmp
+      - ico
       - svg
   class_for_file_extension:
     svg: Sunnysideup\SilverStripeSvg\SVGImage
+
 
 # Optionally uncomment this to have has_one images loaded as SVG in case of .svg extension
 # You would also need to hack the core framework's ForeignKey class for this to work, see README

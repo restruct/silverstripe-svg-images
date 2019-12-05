@@ -103,17 +103,17 @@ class SVGImage extends Image
     //
     public function IsSVG(){
         if($this->getExtension()=='svg') {
-//            var_dump('svg');
             return true;
         }
         return false;
     }
 
     public function SVG($id = null){
-        if( ! $this->IsSVG() || ! class_exists('SVGImage_Template')) return false;
+        if( ! $this->IsSVG() || ! class_exists(SVGImage_Template::class)) return false;
         $fileparts = explode(DIRECTORY_SEPARATOR, $this->Filename);
         $svg = new SVGImage_Template(array_pop($fileparts), $id);
-        $svg->customBasePath(implode(DIRECTORY_SEPARATOR, $fileparts));
+        $path = PUBLIC_DIR . DIRECTORY_SEPARATOR . ASSETS_DIR . DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $fileparts);
+        $svg->customBasePath($path);
         return $svg;
     }
 

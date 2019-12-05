@@ -5,7 +5,7 @@ namespace Sunnysideup\SilverStripeSvg;
 use StevieMayhew\SilverStripeSVG\SVGTemplate;
 
 // only extend if exists
-if(class_exists('SVGTemplate')) {
+if(class_exists(SVGTemplate::class)) {
 
     class SVGImage_Template extends SVGTemplate
     {
