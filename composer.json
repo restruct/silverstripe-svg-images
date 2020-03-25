@@ -13,7 +13,7 @@
         }
     ],
     "require": {
-        "silverstripe/cms": "~4.0"
+        "silverstripe/cms": "^4"
     },
     "suggest": {
         "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
