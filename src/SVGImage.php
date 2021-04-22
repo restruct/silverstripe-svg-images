@@ -16,7 +16,13 @@ class SVGImage extends Image
     }
 
     public function getDimensions($dim = "string") {
-        if($this->getExtension()!='svg' || !$this->exists()) return parent::getDimensions($dim);
+        if($this->getExtension()!='svg' || !$this->exists()) {
+            try {
+                return parent::getDimensions($dim);
+            } catch(\Exception $e) {
+                return false;
+            }
+        }
 
         if($this->getField('Filename')) {
             $filePath = $this->getFullPath();
