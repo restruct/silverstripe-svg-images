@@ -4,6 +4,9 @@ namespace Restruct\Silverstripe\SVG;
 
 use SilverStripe\Assets\Image;
 use DOMDocument;
+use SilverStripe\Control\Director;
+use SilverStripe\Core\Injector\Injector;
+use SilverStripeSVGImage\SVGImage_Template;
 
 class SVGImage extends Image
 {
@@ -19,13 +22,7 @@ class SVGImage extends Image
 
     public function getDimensions($dim = "string")
     {
-        if ( $this->getExtension() !== 'svg' || !$this->exists() ) {
-            try {
-                return parent::getDimensions($dim);
-            } catch ( \Exception $e ) {
-                return false;
-            }
-        }
+        if ( $this->getExtension() !== 'svg' || !$this->exists() ) return parent::getDimensions($dim);
 
         if ( $this->getField('Filename') ) {
             $filePath = $this->getFullPath();
@@ -54,27 +51,6 @@ class SVGImage extends Image
 
         }
     }
-
-    /**
-     * Return an XHTML img tag for this Image,
-     * or NULL if the image file doesn't exist on the filesystem.
-     *
-     * @return string
-     */
-//    public function getTag() {
-//        if($this->exists()) {
-//            $url = $this->getURL();
-//            $title = ($this->Title) ? $this->Title : $this->Filename;
-//            if($this->Title) {
-//                $title = Convert::raw2att($this->Title);
-//            } else {
-//                if(preg_match("/([^\/]*)\.[a-zA-Z0-9]{1,6}$/", $title, $matches)) {
-//                    $title = Convert::raw2att($matches[1]);
-//                }
-//            }
-//            return "<img src=\"$url\" alt=\"$title\" test />";
-//        }
-//    }
 
     /**
      *
@@ -111,8 +87,18 @@ class SVGImage extends Image
     {
         if ( $this->getExtension() === 'svg' ) return $this;
 
-        // else just forward to regular Image class
-        return call_user_func_array('parent::getFormattedImage', func_get_args());
+        $args = func_get_args();
+
+        if ($this->exists()) {
+            $cacheFile = call_user_func_array(array($this, "cacheFilename"), $args);
+
+            if (!file_exists(Director::baseFolder() . "/" . $cacheFile) || self::$flush) {
+                call_user_func_array(array($this, "generateFormattedImage"), $args);
+            }
+
+            $cached = new Image_Cached($cacheFile, false, $this);
+            return $cached;
+        }
     }
 
 
@@ -128,20 +114,31 @@ class SVGImage extends Image
         return false;
     }
 
+    /**
+     * @param null $id
+     *
+     * @return bool|SVGImage_Template
+     */
     public function SVG($id = null)
     {
-        if ( !$this->IsSVG() || !class_exists(SVGImage_Template::class) ) return false;
-        $fileparts = explode(DIRECTORY_SEPARATOR, $this->Filename);
-        $svg = new SVGImage_Template(array_pop($fileparts), $id);
-        $path = PUBLIC_DIR . DIRECTORY_SEPARATOR . ASSETS_DIR . DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $fileparts);
-        $svg->customBasePath($path);
+        if ( !$this->IsSVG() || !class_exists(SVGImage_Template::class) ) {
+            return false;
+        }
+        $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
+        $fileName = array_pop($fileparts);
+        $svg = new SVGImage_Template($fileName, $id);
+        $svg->customBasePath(implode(DIRECTORY_SEPARATOR, $fileparts));
 
         return $svg;
     }
 
+    /**
+     * @return bool|string
+     */
     public function SVG_RAW_Inline()
     {
-        $filePath = BASE_PATH . DIRECTORY_SEPARATOR . $this->Filename;
+        $filePath = BASE_PATH . $this->getURL();
+
         if ( file_exists($filePath) ) {
             return file_get_contents($filePath);
         }
