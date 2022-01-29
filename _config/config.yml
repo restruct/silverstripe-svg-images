@@ -1,11 +1,11 @@
 ---
-Name: sunnysvgimages
+Name: restruct-svg-images
 After:
   - 'framework/*'
 ---
 SilverStripe\Admin\LeftAndMain:
   extra_requirements_css:
-    - 'sunnysideup/silverstripe-svg-images:css/svg-images.css'
+    - 'restruct/silverstripe-svg-images:css/svg-images.css'
 
 SilverStripe\Assets\File:
   allowed_extensions:
@@ -37,7 +37,7 @@ SilverStripe\Assets\File:
       - ico
       - svg
   class_for_file_extension:
-    svg: Sunnysideup\SilverStripeSvg\SVGImage
+    svg: Restruct\Silverstripe\SVG\SVGImage
 
 
 # Optionally uncomment this to have has_one images loaded as SVG in case of .svg extension

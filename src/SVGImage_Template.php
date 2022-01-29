@@ -1,6 +1,6 @@
 <?php
 
-namespace Sunnysideup\SilverStripeSvg;
+namespace Restruct\Silverstripe\SVG;
 
 use StevieMayhew\SilverStripeSVG\SVGTemplate;
 
