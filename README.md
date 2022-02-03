@@ -13,7 +13,7 @@ As a general rule of thumb, only work with trusted SVGs (created & uploaded by t
 ## Installation
 Allow svg as an extension on 'File' in config.yml:
 ```
-File:
+SilverStripe\Assets\File:
   allowed_extensions:
     - svg
 ```
@@ -37,11 +37,9 @@ OR Add the following config to have UploadFields for has_one pointing to 'Image'
 which also uses injector for Image)
 
 ```yml
-Injector:
+SilverStripe\Core\Injector\Injector:
   Image:
     class: SVGImage
-  Image_Cached:
-    class: SVGImage_Cached
 ```
 
 ## Allowing SVG in scaffolded UploadFields
