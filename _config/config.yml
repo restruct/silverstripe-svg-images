@@ -22,4 +22,4 @@ SilverStripe\Assets\File:
 # You would also need to hack the core framework's ForeignKey class for this to work, see README
 SilverStripe\Core\Injector\Injector:
   SilverStripe\Assets\Image:
-    class: SilverStripeSVGImage\SVGImage
+    class: Restruct\Silverstripe\SVG\SVGImage

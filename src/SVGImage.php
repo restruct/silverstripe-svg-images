@@ -6,7 +6,6 @@ use SilverStripe\Assets\Image;
 use DOMDocument;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripeSVGImage\SVGImage_Template;
 
 class SVGImage extends Image
 {
