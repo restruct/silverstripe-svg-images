@@ -2,6 +2,7 @@
   "name": "restruct/silverstripe-svg-images",
   "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
   "type": "silverstripe-vendormodule",
+  "license": "BSD-3-Clause",
   "keywords": [
     "silverstripe"
   ],
