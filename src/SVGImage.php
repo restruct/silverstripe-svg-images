@@ -4,6 +4,7 @@ namespace Restruct\Silverstripe\SVG;
 
 use SilverStripe\Assets\Image;
 use DOMDocument;
+use SilverStripe\Control\Controller;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
 
@@ -126,10 +127,12 @@ class SVGImage extends Image
         $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
         $fileName = array_pop($fileparts);
         $svg = new SVGImage_Template($fileName, $id);
-        $svg->customBasePath(implode(DIRECTORY_SEPARATOR, $fileparts));
+
+        $svg->customBasePath(Controller::join_links(DIRECTORY_SEPARATOR, Director::publicDir(), implode(DIRECTORY_SEPARATOR, $fileparts)));
 
         return $svg;
     }
+
 
     /**
      * @return bool|string
