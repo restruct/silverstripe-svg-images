@@ -135,14 +135,14 @@ class SVGImage extends Image
 
 
     /**
-     * @return bool|string
+     * @return DBField|void
      */
     public function SVG_RAW_Inline()
     {
-        $filePath = BASE_PATH . $this->getURL();
+        $filePath = Path::join(Director::publicFolder() , $this->getURL());
 
         if ( file_exists($filePath) ) {
-            return file_get_contents($filePath);
+            return DBField::create_field('HTMLFragment',file_get_contents($filePath));
         }
     }
 
