@@ -7,6 +7,8 @@ use DOMDocument;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Path;
+use SilverStripe\ORM\FieldType\DBField;
 
 class SVGImage extends Image
 {
