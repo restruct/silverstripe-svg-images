@@ -143,7 +143,7 @@ class SVGImage extends Image
     {
         $filePath = Path::join(Director::publicFolder() , $this->getURL());
 
-        if ( file_exists($filePath) ) {
+        if ( is_file($filePath) ) {
             return DBField::create_field('HTMLFragment',file_get_contents($filePath));
         }
     }
