@@ -9,17 +9,6 @@ SVGs may expose *a lot* of possible attack vectors, most of which are widely kno
 
 As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an img tag provide a bit more security (eg no script execution) than inline SVG code.
 
-
-## Installation
-Allow svg as an extension on 'File' in config.yml:
-```
-SilverStripe\Assets\File:
-  allowed_extensions:
-    - svg
-```
-
-Next, add svg to the list of allowed extensions in the htaccess file in the assets folder.
-
 ## Fresh codebases:
 Best option is to resort to many_manys with UploadField::setAllowedMaxFileNumber(1), since File/Upload tries
 to instantiate the relation's appointed classname for has_ones and so will resort to Image instead of SVGImage.
@@ -38,30 +27,8 @@ which also uses injector for Image)
 
 ```yml
 SilverStripe\Core\Injector\Injector:
-  Image:
-    class: SVGImage
-```
-
-## Allowing SVG in scaffolded UploadFields
-
-Scaffolded UploadFields to 'Image' may need to be told to allow SVG images as well (currently fixed in master):
-
-```php
-$field->setAllowedFileCategories('image');
-```
-
-It's also possible to temporarily hack the framework /Framework/model/fieldtypes/ForeignKey around line 33 to make 
-scaffolded has_one UploadFields for Image relations allow SVGs (temporarily because this is currently fixed in master).
-
-```php
-    ...
-    if($hasOneClass && singleton($hasOneClass) instanceof Image) {
-        $field = new UploadField($relationName, $title);
-        // CHANGE:
-        //$field->getValidator()->setAllowedExtensions(array('jpg', 'jpeg', 'png', 'gif'));
-        // TO:
-        $field->setAllowedFileCategories('image');
-    } else ...
+ SilverStripe\Assets\Image:
+   class: Restruct\Silverstripe\SVG\SVGImage
 ```
 
 ## Usage
