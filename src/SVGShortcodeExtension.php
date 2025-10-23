@@ -2,6 +2,7 @@
 
 namespace Restruct\Silverstripe\SVG;
 
+use SilverStripe\Assets\File;
 use SilverStripe\Core\Extension;
 use SilverStripe\View\Parsers\ShortcodeParser;
 
@@ -22,7 +23,7 @@ class SVGShortcodeExtension extends Extension
         }
 
         // Load the file
-        $file = \SilverStripe\Assets\File::get()->byID($arguments['id']);
+        $file = File::get()->byID($arguments['id']);
         if (!$file || !$file->exists()) {
             return '<img alt="Image not found" class="' . ($arguments['class'] ?? '') . '">';
         }
@@ -51,9 +52,11 @@ class SVGShortcodeExtension extends Extension
         if ($class) {
             $attrs['class'] = $class;
         }
+
         if ($width) {
             $attrs['width'] = $width;
         }
+
         if ($height) {
             $attrs['height'] = $height;
         }
@@ -61,7 +64,7 @@ class SVGShortcodeExtension extends Extension
         // Build attribute string
         $attrString = '';
         foreach ($attrs as $key => $value) {
-            $attrString .= ' ' . $key . '="' . htmlspecialchars($value) . '"';
+            $attrString .= ' ' . $key . '="' . htmlspecialchars((string) $value) . '"';
         }
 
         return '<img' . $attrString . '>';
@@ -80,7 +83,7 @@ class SVGShortcodeExtension extends Extension
             }
 
             // Load the file
-            $file = \SilverStripe\Assets\File::get()->byID($arguments['id']);
+            $file = File::get()->byID($arguments['id']);
             if (!$file || !$file->exists()) {
                 return '<img alt="Image not found" class="' . ($arguments['class'] ?? '') . '">';
             }
@@ -109,9 +112,11 @@ class SVGShortcodeExtension extends Extension
             if ($class) {
                 $attrs['class'] = $class;
             }
+
             if ($width) {
                 $attrs['width'] = $width;
             }
+
             if ($height) {
                 $attrs['height'] = $height;
             }

@@ -2,29 +2,37 @@
 
 namespace Restruct\Silverstripe\SVG;
 
+use Override;
+use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Assets\Image;
 use DOMDocument;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\Director;
-use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Path;
 use SilverStripe\ORM\FieldType\DBField;
 
 class SVGImage extends Image
 {
 
+    private static $table_name = 'SVGImage';
+
     private static $flush = false;
 
+    #[Override]
     public function getFileType()
     {
-        if ($this->getExtension() === 'svg') return "SVG image";
+        if ($this->getExtension() === 'svg') {
+            return "SVG image";
+        }
 
         return parent::getFileType();
     }
 
     public function getDimensions($dim = "string")
     {
-        if ($this->getExtension() !== 'svg' || !$this->exists()) return parent::getDimensions($dim);
+        if ($this->getExtension() !== 'svg' || !$this->exists()) {
+            return parent::getDimensions($dim);
+        }
 
         if ($this->getField('Filename')) {
             $filePath = $this->getFullPath();
@@ -32,9 +40,10 @@ class SVGImage extends Image
             // parse SVG
             $out = new DOMDocument();
             $out->load($filePath);
-            if (!is_object($out) || !is_object($out->documentElement)) {
+            if (!is_object($out->documentElement)) {
                 return false;
             }
+
             // get dimensions from viewbox or else from width/height on root svg element
             $root = $out->documentElement;
             if ($root->hasAttribute('viewBox')) {
@@ -49,9 +58,10 @@ class SVGImage extends Image
             }
 
             // (regular logic/from Image class)
-            return ($dim === "string") ? "$size[0]x$size[1]" : $size[$dim];
+            return ($dim === "string") ? sprintf('%sx%s', $size[0], $size[1]) : $size[$dim];
 
         }
+        return null;
     }
 
     /**
@@ -61,11 +71,13 @@ class SVGImage extends Image
      * @param integer $width The width to size within
      * @param integer $height The height to size within
      *
-     * @return $this|\SilverStripe\Assets\Storage\AssetContainer
+     * @return $this|AssetContainer
      */
     public function Fit($width, $height)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
 
         // else just forward to regular Image class
         return parent::Fit($width, $height);
@@ -77,31 +89,46 @@ class SVGImage extends Image
      */
     public function ScaleWidth($width)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
         return parent::ScaleWidth($width);
     }
 
     public function ScaleHeight($height)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
         return parent::ScaleHeight($height);
     }
 
     public function FitMax($width, $height)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
         return parent::FitMax($width, $height);
     }
 
     public function Fill($width, $height)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
         return parent::Fill($width, $height);
     }
 
     public function Pad($width, $height, $backgroundColor = 'FFFFFF', $transparencyPercent = 0)
     {
-        if ($this->getExtension() === 'svg') return $this;
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
         return parent::Pad($width, $height, $backgroundColor, $transparencyPercent);
     }
 
@@ -117,12 +144,15 @@ class SVGImage extends Image
                 public function getAllowsAnimationInManipulations(): bool {
                     return false;
                 }
+
                 public function setAllowsAnimationInManipulations(bool $allow) {
                     return $this;
                 }
+
                 public function getWidth(): int {
                     return 0;
                 }
+
                 public function getHeight(): int {
                     return 0;
                 }
@@ -136,6 +166,7 @@ class SVGImage extends Image
      * SVG files are images, just vector-based ones
      * Keep this as true so shortcodes and other image handling works
      */
+    #[Override]
     public function getIsImage()
     {
         if ($this->getExtension() === 'svg') {
@@ -149,6 +180,7 @@ class SVGImage extends Image
      * Override PreviewLink to return the SVG URL directly
      * SVG files don't need preview generation
      */
+    #[Override]
     public function PreviewLink($action = null)
     {
         if ($this->getExtension() === 'svg') {
@@ -185,16 +217,10 @@ class SVGImage extends Image
 
     public function IsSVG()
     {
-        if ($this->getExtension() === 'svg') {
-            return true;
-        }
-
-        return false;
+        return $this->getExtension() === 'svg';
     }
 
     /**
-     * @param null $id
-     *
      * @return bool|SVGImage_Template
      */
     public function SVG($id = null)
@@ -202,6 +228,7 @@ class SVGImage extends Image
         if (!$this->IsSVG() || !class_exists(SVGImage_Template::class)) {
             return false;
         }
+
         $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
         $fileName = array_pop($fileparts);
         $svg = new SVGImage_Template($fileName, $id);
@@ -213,7 +240,7 @@ class SVGImage extends Image
 
 
     /**
-     * @return DBField|void
+     * @return DBField|null
      */
     public function SVG_RAW_Inline()
     {
@@ -222,6 +249,7 @@ class SVGImage extends Image
         if (is_file($filePath)) {
             return DBField::create_field('HTMLFragment', file_get_contents($filePath));
         }
+        return null;
     }
 
 }

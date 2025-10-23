@@ -19,11 +19,9 @@ class SVGFileExtension extends Extension
         $owner = $this->getOwner();
 
         // Check if this is an SVG file
-        if ($owner->getExtension() === 'svg') {
-            // If it's not already an SVGImage instance, update the ClassName
-            if (!($owner instanceof SVGImage)) {
-                $owner->ClassName = SVGImage::class;
-            }
+        // If it's not already an SVGImage instance, update the ClassName
+        if ($owner->getExtension() === 'svg' && !($owner instanceof SVGImage)) {
+            $owner->ClassName = SVGImage::class;
         }
     }
 }
