@@ -105,6 +105,32 @@ class SVGImage extends Image
         return parent::Pad($width, $height, $backgroundColor, $transparencyPercent);
     }
 
+    /**
+     * Override getImageBackend to return a dummy backend for SVG files
+     * This prevents null pointer errors in ThumbnailGenerator
+     */
+    public function getImageBackend()
+    {
+        if ($this->getExtension() === 'svg') {
+            // Return a minimal anonymous class that implements the required methods
+            return new class {
+                public function getAllowsAnimationInManipulations(): bool {
+                    return false;
+                }
+                public function setAllowsAnimationInManipulations(bool $allow) {
+                    return $this;
+                }
+                public function getWidth(): int {
+                    return 0;
+                }
+                public function getHeight(): int {
+                    return 0;
+                }
+            };
+        }
+
+        return parent::getImageBackend();
+    }
 
     /**
      * SVG files are images, just vector-based ones
