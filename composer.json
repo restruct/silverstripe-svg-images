@@ -14,7 +14,8 @@
     }
   ],
   "require": {
-    "silverstripe/cms": "^4 || ^5"
+    "silverstripe/cms": "^6",
+    "ext-dom": "*"
   },
   "suggest": {
     "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"

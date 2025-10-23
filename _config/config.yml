@@ -17,7 +17,7 @@ SilverStripe\Assets\File:
     image/supported:
       - svg
   class_for_file_extension:
-    svg: Restruct\Silverstripe\SVG
+    svg: Restruct\Silverstripe\SVG\SVGImage
 
 SilverStripe\Assets\Storage\DBFile:
   supported_images:

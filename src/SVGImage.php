@@ -17,39 +17,39 @@ class SVGImage extends Image
 
     public function getFileType()
     {
-        if ( $this->getExtension() === 'svg' ) return "SVG image - good for line drawings";
+        if ($this->getExtension() === 'svg') return "SVG image";
 
         return parent::getFileType();
     }
 
     public function getDimensions($dim = "string")
     {
-        if ( $this->getExtension() !== 'svg' || !$this->exists() ) return parent::getDimensions($dim);
+        if ($this->getExtension() !== 'svg' || !$this->exists()) return parent::getDimensions($dim);
 
-        if ( $this->getField('Filename') ) {
+        if ($this->getField('Filename')) {
             $filePath = $this->getFullPath();
 
             // parse SVG
             $out = new DOMDocument();
             $out->load($filePath);
-            if ( !is_object($out) || !is_object($out->documentElement) ) {
+            if (!is_object($out) || !is_object($out->documentElement)) {
                 return false;
             }
             // get dimensions from viewbox or else from width/height on root svg element
             $root = $out->documentElement;
-            if ( $root->hasAttribute('viewBox') ) {
+            if ($root->hasAttribute('viewBox')) {
                 $vbox = explode(' ', $root->getAttribute('viewBox'));
-                $size[ 0 ] = $vbox[ 2 ] - $vbox[ 0 ];
-                $size[ 1 ] = $vbox[ 3 ] - $vbox[ 1 ];
-            } elseif ( $root->hasAttribute('width') ) {
-                $size[ 0 ] = $root->getAttribute('width');
-                $size[ 1 ] = $root->getAttribute('height');
+                $size[0] = $vbox[2] - $vbox[0];
+                $size[1] = $vbox[3] - $vbox[1];
+            } elseif ($root->hasAttribute('width')) {
+                $size[0] = $root->getAttribute('width');
+                $size[1] = $root->getAttribute('height');
             } else {
-                return ( $dim === "string" ) ? "No size set (scalable)" : 0;
+                return ($dim === "string") ? "No size set (scalable)" : 0;
             }
 
             // (regular logic/from Image class)
-            return ( $dim === "string" ) ? "$size[0]x$size[1]" : $size[ $dim ];
+            return ($dim === "string") ? "$size[0]x$size[1]" : $size[$dim];
 
         }
     }
@@ -58,58 +58,108 @@ class SVGImage extends Image
      *
      * Scale image proportionally to fit within the specified bounds
      *
-     * @param integer $width  The width to size within
+     * @param integer $width The width to size within
      * @param integer $height The height to size within
      *
      * @return $this|\SilverStripe\Assets\Storage\AssetContainer
      */
     public function Fit($width, $height)
     {
-        if ( $this->getExtension() === 'svg' ) return $this;
+        if ($this->getExtension() === 'svg') return $this;
 
         // else just forward to regular Image class
         return parent::Fit($width, $height);
     }
 
-
     /**
-     *
-     * Return an image object representing the image in the given format.
-     * This image will be generated using generateFormattedImage().
-     * The generated image is cached, to flush the cache append ?flush=1 to your URL.
-     *
-     * Just pass the correct number of parameters expected by the working function
-     *
-     * @param string $format The name of the format.
-     *
-     *
-     * @return $this|false|mixed
+     * Override image manipulation methods to return the SVG itself
+     * SVGs are scalable and don't need manipulation
      */
-    public function getFormattedImage($format)
+    public function ScaleWidth($width)
     {
-        if ( $this->getExtension() === 'svg' ) return $this;
+        if ($this->getExtension() === 'svg') return $this;
+        return parent::ScaleWidth($width);
+    }
 
-        $args = func_get_args();
+    public function ScaleHeight($height)
+    {
+        if ($this->getExtension() === 'svg') return $this;
+        return parent::ScaleHeight($height);
+    }
 
-        if ($this->exists()) {
-            $cacheFile = call_user_func_array(array($this, "cacheFilename"), $args);
+    public function FitMax($width, $height)
+    {
+        if ($this->getExtension() === 'svg') return $this;
+        return parent::FitMax($width, $height);
+    }
 
-            if (!file_exists(Director::baseFolder() . "/" . $cacheFile) || self::$flush) {
-                call_user_func_array(array($this, "generateFormattedImage"), $args);
-            }
+    public function Fill($width, $height)
+    {
+        if ($this->getExtension() === 'svg') return $this;
+        return parent::Fill($width, $height);
+    }
 
-            $cached = new Image_Cached($cacheFile, false, $this);
-            return $cached;
-        }
+    public function Pad($width, $height, $backgroundColor = 'FFFFFF', $transparencyPercent = 0)
+    {
+        if ($this->getExtension() === 'svg') return $this;
+        return parent::Pad($width, $height, $backgroundColor, $transparencyPercent);
     }
 
 
-    //
-    // SVGTemplate integration
-    //
+    /**
+     * SVG files are images, just vector-based ones
+     * Keep this as true so shortcodes and other image handling works
+     */
+    public function getIsImage()
+    {
+        if ($this->getExtension() === 'svg') {
+            return false;
+        }
+
+        return parent::getIsImage();
+    }
+
+    /**
+     * Override PreviewLink to return the SVG URL directly
+     * SVG files don't need preview generation
+     */
+    public function PreviewLink($action = null)
+    {
+        if ($this->getExtension() === 'svg') {
+            return $this->getURL();
+        }
+
+        return parent::PreviewLink($action);
+    }
+
+    /**
+     * Override ThumbnailURL to return the SVG URL directly
+     * This prevents the ThumbnailGenerator from trying to manipulate SVG files
+     */
+    public function ThumbnailURL($width, $height)
+    {
+        if ($this->getExtension() === 'svg') {
+            return $this->getURL();
+        }
+
+        return parent::ThumbnailURL($width, $height);
+    }
+
+    /**
+     * Override StripThumbnail to return the SVG itself
+     */
+    public function StripThumbnail()
+    {
+        if ($this->getExtension() === 'svg') {
+            return $this;
+        }
+
+        return parent::StripThumbnail();
+    }
+
     public function IsSVG()
     {
-        if ( $this->getExtension() === 'svg' ) {
+        if ($this->getExtension() === 'svg') {
             return true;
         }
 
@@ -123,7 +173,7 @@ class SVGImage extends Image
      */
     public function SVG($id = null)
     {
-        if ( !$this->IsSVG() || !class_exists(SVGImage_Template::class) ) {
+        if (!$this->IsSVG() || !class_exists(SVGImage_Template::class)) {
             return false;
         }
         $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
@@ -141,10 +191,10 @@ class SVGImage extends Image
      */
     public function SVG_RAW_Inline()
     {
-        $filePath = Path::join(Director::publicFolder() , $this->getURL());
+        $filePath = Path::join(Director::publicFolder(), $this->getURL());
 
-        if ( is_file($filePath) ) {
-            return DBField::create_field('HTMLFragment',file_get_contents($filePath));
+        if (is_file($filePath)) {
+            return DBField::create_field('HTMLFragment', file_get_contents($filePath));
         }
     }
 
