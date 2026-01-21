@@ -2,10 +2,6 @@
 Name: svgassetsfiletype
 After: '#assetsfiletypes'
 ---
-SilverStripe\Admin\LeftAndMain:
-  extra_requirements_css:
-    - 'restruct/silverstripe-svg-images:css/svg-images.css'
-
 SilverStripe\Assets\File:
   file_types:
     svg: 'SVG Image'
@@ -17,7 +13,7 @@ SilverStripe\Assets\File:
     image/supported:
       - svg
   class_for_file_extension:
-    svg: Restruct\Silverstripe\SVG
+    svg: Restruct\Silverstripe\SVG\SVGImage
 
 SilverStripe\Assets\Storage\DBFile:
   supported_images:
