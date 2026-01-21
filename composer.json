@@ -24,10 +24,5 @@
     "psr-4": {
       "Restruct\\Silverstripe\\SVG\\": "src/"
     }
-  },
-  "extra": {
-    "expose": [
-      "css"
-    ]
   }
 }

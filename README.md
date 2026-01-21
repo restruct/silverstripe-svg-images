@@ -1,108 +1,117 @@
-# SVG Image support for Silverstripe (assets/uploads)
-This works as-is with any files added via the AssetAdmin and many_many relations to 'File/Image(/SVGImage)'.
+# SVG Image support for SilverStripe 4/5 (assets/uploads)
 
-This module exposes the SVG template helpers/methods of the stevie-mayhew/silverstripe-svg module if that's 
-installed (recommended by composer). See 'Usage'.
+This module provides SVG support in SilverStripe's asset management system. SVG files uploaded via AssetAdmin are handled by the `SVGImage` class, which ensures proper CMS thumbnail/preview display and bypasses raster image manipulation (since SVGs are vector graphics).
 
-# SVG Security
-SVGs may expose *a lot* of possible attack vectors, most of which are widely known and unpatched. Basically you should consider SVG a browser-executable format comparable to HTML/JS, but with virtually no exploit-protection built into browsers. In some circumstances, eg when parsing XML server side, SVGs could also pose server side risks like file inclusion (XML External Entity attack), fork bombs (Billion laughs) and probably dozens more. See 'Security considerations'.
+## Features
 
-As a general rule of thumb, only work with trusted SVGs (created & uploaded by trusted users). SVGs loaded through an img tag provide a bit more security (eg no script execution) than inline SVG code.
+- CMS thumbnail and preview support for SVG files in AssetAdmin
+- Dimension parsing from SVG `viewBox` or `width`/`height` attributes
+- All image manipulation methods (Fit, Fill, ScaleWidth, etc.) return the original SVG
+- Optional integration with [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg) for advanced template helpers
 
-## Fresh codebases:
-Best option is to resort to many_manys with UploadField::setAllowedMaxFileNumber(1), since File/Upload tries
-to instantiate the relation's appointed classname for has_ones and so will resort to Image instead of SVGImage.
+## Installation
 
-OR simply tell the injector to use the SVGImage class instead of Image, see Yaml config below (falls back to Image 
-class for regular images).
-
-OR (probably undesirable) set the has_one relation to 'SVGImage' subclass.
-
-## Options for existing codebases/sites (or modules):
-You may simply change the relation to point to SVGImage class if possible (existing relations may have to be re-added?)
-
-OR Add the following config to have UploadFields for has_one pointing to 'Image' load as SVGImage for .svg files
-(this is another approach then resorting to many_manys, which may interfere with other modules like FocusedImage
-which also uses injector for Image)
-
-```yml
-SilverStripe\Core\Injector\Injector:
- SilverStripe\Assets\Image:
-   class: Restruct\Silverstripe\SVG\SVGImage
+```bash
+composer require restruct/silverstripe-svg-images
 ```
 
+## How it works
+
+The module configures SilverStripe to use the `SVGImage` class for `.svg` files via `class_for_file_extension`. This happens automatically for files uploaded through AssetAdmin.
+
+### Migrating existing SVG files
+
+If you have existing SVG files in your database that were uploaded before installing this module, they may have the wrong `ClassName` stored. To automatically migrate them on `dev/build`, enable the config flag:
+
+```yaml
+Restruct\Silverstripe\SVG\SVGImage:
+  auto_migrate_svg_class: true
+```
+
+Then run `dev/build`. The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables.
+
+### Using SVGImage for has_one Image relations
+
+By default, `has_one` relations to `Image` will instantiate the `Image` class directly. To have SVG files load as `SVGImage` in these relations, you can configure the Injector:
+
+```yaml
+SilverStripe\Core\Injector\Injector:
+  SilverStripe\Assets\Image:
+    class: Restruct\Silverstripe\SVG\SVGImage
+```
+
+Note: This approach may conflict with other modules that also use the Injector for Image (e.g., FocusedImage).
+
+Alternative approaches:
+- Use `many_many` relations with `UploadField::setAllowedMaxFileNumber(1)`
+- Set the `has_one` relation type to `SVGImage` directly
+
 ## Usage
-In a SilverStripe template simply treat as you would treat a normal image (minus the formatting/scaling functionality).
-For scaling/adding classes etc, this module integrates SVG template helpers (stevie-mayhew/silverstripe-svg module required).
+
+In SilverStripe templates, treat SVG images as you would normal images (minus resizing):
 
 ```html
-<!-- add svg as image -->
+<!-- Add SVG as image -->
 <img src="$Image.URL" />
 
-<!-- or, for example when using Foundation interchange to have separate/responsive versions: -->
+<!-- Responsive example with Foundation interchange -->
 <img src="$Image_Mobile.URL" data-interchange="[$Image_Desktop.URL, medium]" />
 ```
 
+### Inline SVG
+
 ```html
-<!-- add inline svg (the raw SVG file will be inserted, see the .SVG helper for more subtle inlining) -->
+<!-- Add raw SVG inline (the SVG file content will be inserted) -->
 {$Image.SVG_RAW_Inline}
 
-<!-- Test for SVG and fallback to regular image methods, for example when the image may be multiple formats (eg SVG/PNG/JPG) -->
+<!-- Test for SVG and fallback to regular image methods -->
 <% if $Image.IsSVG %> {$Image.SVG_RAW_Inline} <% else %> $Image.SetWidth(1200) <% end_if %>
-
-
 ```
 
-Additional helper functions for width, height, size, fill & adding extra classes are exposed by the '.SVG' method.
-(Requires additional module: [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg)
+### Advanced SVG helpers (requires stevie-mayhew/silverstripe-svg)
+
+Additional helper functions for width, height, size, fill & adding extra classes are exposed by the `.SVG` method:
 
 ```html
-<!-- add inline svg (slightly sanitized) -->
+<!-- Add inline SVG (slightly sanitized) -->
 {$Image.SVG}
 
-<!-- add a part of an SVG by ID inline -->
-{$Image.SVG.LimitID('ParticularID')}
-```
-
-
-```html
-<!-- change width -->
+<!-- Change width -->
 {$Image.SVG.width(200)}
 
-<!-- change height -->
+<!-- Change height -->
 {$Image.SVG.height(200)}
 
-<!-- change size (width and height) -->
+<!-- Change size (width and height) -->
 {$Image.SVG.size(100,100)}
 
-<!-- change fill -->
+<!-- Change fill -->
 {$Image.SVG.fill('#FF9933')}
 
-<!-- add class -->
+<!-- Add class -->
 {$Image.SVG.extraClass('awesome-svg')}
-
 ```
 
-These options are also chainable.
+These options are chainable:
 
 ```html
-{$SVG('name').fill('#45FABD').width(200).height(100).extraClass('awesome-svg')}
+{$Image.SVG.fill('#45FABD').width(200).height(100).extraClass('awesome-svg')}
 ```
 
-## Security considerations
-Currently I don't know of any way to fully sanitize untrusted SVGs. Regular expressions are not suitable for the job and any PHP XML parsers are vulnerable to at least some attack vectors (like file inclusion). Here's a [thorough listing of known attack vectors](https://pypi.org/project/defusedxml/#php). 
+## SVG Security
 
-[DOMPurify](https://github.com/cure53/DOMPurify) is a browser/JS based library that seems to do a pretty good job (but it's JS/NodeJS, not PHP). PHP based libraries which provide some protection but use (possibly dangerous) XML parsing are [svg-sanitizer](https://github.com/darylldoyle/svg-sanitizer) & [SVG Sanitizer](https://github.com/alnorris/SVG-Sanitizer).
+SVGs can expose attack vectors comparable to HTML/JS, with limited browser protection. Potential risks include:
+- Script execution (in inline SVGs)
+- XML External Entity (XXE) attacks
+- Billion laughs (XML bomb)
 
+**General rule**: Only work with trusted SVGs from trusted users. SVGs loaded through an `<img>` tag provide more security (e.g., no script execution) than inline SVG code.
 
-### SVG cropping & additional manipulations (to be added to this module)
+### Sanitization
 
-http://www.silverstrip.es/blog/svg-in-the-silverstripe-backend/
+There is no fully reliable way to sanitize untrusted SVGs in PHP. Options include:
+- [DOMPurify](https://github.com/cure53/DOMPurify) - Browser/JS based, thorough protection
+- [svg-sanitizer](https://github.com/darylldoyle/svg-sanitizer) - PHP based, uses XML parsing
+- [SVG Sanitizer](https://github.com/alnorris/SVG-Sanitizer) - PHP based alternative
 
-Cropping can basically be done using viewBox, combined with svg width/height attr (all optional)
-PHP SVG class (Imagemagick): https://github.com/oscarotero/imagecow
-Simple rendering SVG>JPG/PNG: http://stackoverflow.com/questions/10289686/rendering-an-svg-file-to-a-png-or-jpeg-in-php
-
-PHP Cairo (PECL, not really an option): http://php.net/manual/en/class.cairosvgsurface.php
-
-PHP SVG Iconizr (CLI CSS/SVG/PNG sprite generator): https://github.com/jkphl/iconizr
+For a thorough listing of known attack vectors, see [defusedxml documentation](https://pypi.org/project/defusedxml/#php).
