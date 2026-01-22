@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150" width="200" height="150">
+  <!-- Background - Purple to indicate draft -->
+  <rect width="200" height="150" fill="#8e44ad"/>
+
+  <!-- Circle -->
+  <circle cx="60" cy="75" r="40" fill="#e74c3c"/>
+
+  <!-- Rectangle -->
+  <rect x="110" y="35" width="70" height="80" fill="#2ecc71" rx="5"/>
+
+  <!-- Triangle -->
+  <polygon points="145,115 110,145 180,145" fill="#f39c12"/>
+
+  <!-- Text -->
+  <text x="100" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">SVG Draft</text>
+</svg>

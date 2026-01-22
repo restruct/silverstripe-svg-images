@@ -27,6 +27,7 @@ Supported operations:
 - `FitMax($width, $height)` - Same as Fit, but only if image is larger
 - `Fill($width, $height)` - Crop and resize to fill exact dimensions
 - `FillMax($width, $height)` - Same as Fill, but only if image is larger
+- `Pad($width, $height)` - Fit within bounds and add transparent padding to reach exact dimensions
 - `ScaleWidth($width)` - Scale to specific width, maintaining aspect ratio
 - `ScaleHeight($height)` - Scale to specific height, maintaining aspect ratio
 - `CropRegion($x, $y, $width, $height)` - Crop to specific region
@@ -149,11 +150,32 @@ Restruct\Silverstripe\SVG\SVGImage:
   auto_migrate_svg_class: false
 ```
 
-## TODO / Known limitations
+## Development Tools
 
-- **Flush handling**: SVG variants are stored like regular image variants. The standard `?flush=1` and image cache clearing should work, but this needs more testing.
-- **Thumbnail removal tasks**: Compatibility with bulk thumbnail removal tasks needs verification.
-- **Protected assets**: SVG manipulation with protected/draft assets needs testing.
+### SVG vs PNG Comparison Tool
+
+A visual comparison tool is available at `/dev/svg-compare` to verify that SVG manipulations behave consistently with PNG manipulations. The tool:
+
+- Compares all manipulation methods (Fit, Fill, Pad, Scale, etc.) side-by-side
+- Tests both published and draft/protected assets
+- Includes bundled test images or accepts custom image IDs
+
+### Clear SVG Variants Task
+
+To clear all generated SVG variant files (useful after upgrading or when manipulation settings change):
+
+```bash
+# Dry run - shows what would be deleted
+vendor/bin/sake dev/tasks/ClearSVGVariantsTask
+
+# Actually delete variants
+vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1
+
+# Verbose output
+vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1 verbose=1
+```
+
+Variants will be regenerated on next request using the current manipulation settings.
 
 ## Requirements
 
@@ -161,3 +183,8 @@ Restruct\Silverstripe\SVG\SVGImage:
 - PHP 7.4+
 - contao/imagine-svg ^1.0
 - enshrined/svg-sanitize ^0.20
+
+### Optional
+
+- `ext-gd` - Required for generating PNG test images in `/dev/svg-compare`
+- [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg) - For additional SVG template helpers
