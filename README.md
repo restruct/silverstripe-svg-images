@@ -6,7 +6,6 @@ This module provides comprehensive SVG support in SilverStripe's asset managemen
 - **Real SVG manipulation** (resize, crop) that modifies viewBox/dimensions while preserving vectors
 - **SVG sanitization** on upload to remove potentially dangerous content
 - **Dimension parsing** from SVG viewBox/width/height attributes
-- Optional integration with [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg) for template helpers
 
 ## Installation
 
@@ -109,18 +108,12 @@ Note: This may conflict with other modules that also use the Injector for Image.
 <% end_if %>
 ```
 
-### Advanced SVG helpers (requires stevie-mayhew/silverstripe-svg)
+### Inline SVG with color manipulation
+
+If you need to manipulate SVG colors or add CSS classes for inline SVGs, consider [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg). You can use it alongside this module by passing the asset path:
 
 ```html
-{$Image.SVG}
-{$Image.SVG.width(200)}
-{$Image.SVG.height(200)}
-{$Image.SVG.size(100,100)}
-{$Image.SVG.fill('#FF9933')}
-{$Image.SVG.extraClass('awesome-svg')}
-
-<!-- Chainable -->
-{$Image.SVG.fill('#45FABD').width(200).height(100).extraClass('awesome-svg')}
+{$SVG($Image.Filename).fill('#FF9933').extraClass('my-icon')}
 ```
 
 ## SVG Security
@@ -187,4 +180,3 @@ Variants will be regenerated on next request using the current manipulation sett
 ### Optional
 
 - `ext-gd` - Required for generating PNG test images in `/dev/svg-compare`
-- [stevie-mayhew/silverstripe-svg](https://github.com/stevie-mayhew/silverstripe-svg) - For additional SVG template helpers

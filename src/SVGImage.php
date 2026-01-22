@@ -28,7 +28,6 @@ use SilverStripe\ORM\FieldType\DBField;
  * - Real SVG manipulation (resize, crop) using contao/imagine-svg
  * - SVG sanitization on upload using enshrined/svg-sanitize
  * - Dimension parsing from SVG viewBox/width/height attributes
- * - Optional integration with stevie-mayhew/silverstripe-svg for template helpers
  *
  * Unlike raster images, SVG manipulation modifies viewBox and width/height attributes
  * while preserving the vector format.
@@ -750,35 +749,6 @@ class SVGImage extends Image
                 DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
             }
         }
-    }
-
-    // =========================================================================
-    // SVG template helpers
-    // =========================================================================
-
-    /**
-     * Get SVG template helper for advanced manipulation.
-     * Requires stevie-mayhew/silverstripe-svg package.
-     *
-     * @param string|null $id Optional ID to limit SVG scope
-     * @return SVGImage_Template|false
-     */
-    public function SVG($id = null)
-    {
-        if (!$this->IsSVG() || !class_exists(SVGImage_Template::class)) {
-            return false;
-        }
-
-        $fileparts = explode(DIRECTORY_SEPARATOR, $this->getURL());
-        $fileName = array_pop($fileparts);
-        $svg = new SVGImage_Template($fileName, $id);
-        $svg->customBasePath(Controller::join_links(
-            DIRECTORY_SEPARATOR,
-            Director::publicDir(),
-            implode(DIRECTORY_SEPARATOR, $fileparts)
-        ));
-
-        return $svg;
     }
 
     /**

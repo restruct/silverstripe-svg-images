@@ -19,7 +19,6 @@
     "enshrined/svg-sanitize": "^0.20"
   },
   "suggest": {
-    "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods",
     "ext-gd": "Required for generating PNG test images in /dev/svg-compare"
   },
   "autoload": {
