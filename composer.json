@@ -14,7 +14,9 @@
     }
   ],
   "require": {
-    "silverstripe/cms": "^4 || ^5"
+    "silverstripe/cms": "^4 || ^5",
+    "contao/imagine-svg": "^1.0",
+    "enshrined/svg-sanitize": "^0.20"
   },
   "suggest": {
     "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
