@@ -70,6 +70,8 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 Then run `dev/build`. The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables.
 
+> **Note:** The migration runs via `requireDefaultRecords()`. If you use `dev/build no-populate=1`, the migration will be skipped. Run `dev/build/defaults` separately to trigger it, or run a normal `dev/build` without `no-populate`.
+
 ### Using SVGImage for has_one Image relations
 
 By default, `has_one` relations to `Image` will instantiate the `Image` class directly. To have SVG files load as `SVGImage` in these relations, configure the Injector:
