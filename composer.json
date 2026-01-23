@@ -14,14 +14,23 @@
     }
   ],
   "require": {
-    "silverstripe/cms": "^4 || ^5"
+    "silverstripe/cms": "^4 || ^5",
+    "contao/imagine-svg": "^1.0",
+    "enshrined/svg-sanitize": "^0.20"
   },
   "suggest": {
-    "stevie-mayhew/silverstripe-svg": "Adds additional SVG Template methods"
+    "ext-gd": "Required for generating PNG test images in /dev/svg-compare"
   },
   "autoload": {
     "psr-4": {
       "Restruct\\Silverstripe\\SVG\\": "src/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true,
+      "silverstripe/vendor-plugin": true,
+      "silverstripe/recipe-plugin": true
     }
   }
 }

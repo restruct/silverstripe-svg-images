@@ -35,3 +35,11 @@ SilverStripe\MimeValidator\MimeUploadValidator:
   MimeTypes:
     svg:
       - image/svg
+
+---
+Name: svgcompareroutes
+After: '#rootroutes'
+---
+SilverStripe\Control\Director:
+  rules:
+    'dev/svg-compare': Restruct\Silverstripe\SVG\Controllers\SVGCompareController

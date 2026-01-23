@@ -3,206 +3,24 @@
 namespace Restruct\Silverstripe\SVG;
 
 use Contao\ImagineSvg\Imagine;
-use Contao\ImagineSvg\SvgBox;
-use DOMDocument;
-use enshrined\svgSanitize\Sanitizer;
 use Imagine\Image\Box;
 use Imagine\Image\ImageInterface;
 use Imagine\Image\Point;
-use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Assets\Storage\AssetStore;
-use SilverStripe\Assets\Storage\DBFile;
-use SilverStripe\Control\Controller;
-use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripe\Core\Path;
-use SilverStripe\ORM\DB;
 use SilverStripe\ORM\FieldType\DBField;
 
 /**
- * SVGImage - Extends Image to provide SVG support in SilverStripe.
+ * Shared SVG manipulation methods for SVGImage and SVGDBFile.
  *
- * Key features:
- * - CMS thumbnail/preview support for SVG files
- * - Real SVG manipulation (resize, crop) using contao/imagine-svg
- * - SVG sanitization on upload using enshrined/svg-sanitize
- * - Dimension parsing from SVG viewBox/width/height attributes
- *
- * Unlike raster images, SVG manipulation modifies viewBox and width/height attributes
- * while preserving the vector format.
+ * This trait provides common functionality for:
+ * - Loading SVG content via Imagine
+ * - Creating manipulated SVG variants
+ * - Image manipulation overrides (Fit, Fill, Scale, etc.)
  */
-class SVGImage extends Image
+trait SVGManipulationTrait
 {
-    /**
-     * @var string
-     */
-    private static $table_name = 'SVGImage';
-
-    /**
-     * Enable real SVG manipulation (resize/crop) instead of returning original.
-     * When false, manipulation methods return $this unchanged (legacy behavior).
-     *
-     * @var bool
-     */
-    private static $enable_svg_manipulation = true;
-
-    /**
-     * Sanitize SVG files on upload to remove potentially dangerous content.
-     *
-     * @var bool
-     */
-    private static $sanitize_on_upload = true;
-
-    /**
-     * Remove references to remote files during sanitization.
-     * Prevents HTTP information leaks.
-     *
-     * @var bool
-     */
-    private static $sanitize_remove_remote_references = true;
-
-    /**
-     * Set to true to automatically migrate existing SVG files to SVGImage class on dev/build.
-     *
-     * @var bool
-     */
-    private static $auto_migrate_svg_class = false;
-
-    /**
-     * Human-readable file type description.
-     *
-     * @return string
-     */
-    public function getFileType(): string
-    {
-        if ($this->getExtension() === 'svg') {
-            return 'SVG image';
-        }
-
-        return parent::getFileType();
-    }
-
-    /**
-     * Sanitize SVG content on upload.
-     */
-    public function onBeforeWrite(): void
-    {
-        parent::onBeforeWrite();
-
-        // Only sanitize on first write (new upload) and if enabled
-        if (!$this->isInDB() && $this->IsSVG() && static::config()->get('sanitize_on_upload')) {
-            $this->sanitizeSVG();
-        }
-    }
-
-    /**
-     * Sanitize the SVG file content.
-     *
-     * @return bool True if sanitization was performed
-     */
-    public function sanitizeSVG(): bool
-    {
-        if (!$this->IsSVG() || !$this->exists()) {
-            return false;
-        }
-
-        $content = $this->getString();
-        if (empty($content)) {
-            return false;
-        }
-
-        $sanitizer = new Sanitizer();
-        $sanitizer->removeRemoteReferences(static::config()->get('sanitize_remove_remote_references'));
-
-        $cleanContent = $sanitizer->sanitize($content);
-
-        if ($cleanContent === false) {
-            // Sanitization failed - file may be malformed
-            return false;
-        }
-
-        // Only update if content changed
-        if ($cleanContent !== $content) {
-            $this->setFromString($cleanContent, $this->getFilename());
-        }
-
-        return true;
-    }
-
-    /**
-     * Get SVG dimensions from viewBox or width/height attributes.
-     *
-     * @param string|int $dim "string" for "WxH" format, 0 for width, 1 for height
-     * @return string|int|false
-     */
-    public function getDimensions($dim = "string")
-    {
-        if ($this->getExtension() !== 'svg' || !$this->exists()) {
-            return parent::getDimensions($dim);
-        }
-
-        $filePath = Path::join(Director::publicFolder(), $this->getURL());
-
-        if (!is_file($filePath)) {
-            return ($dim === "string") ? "File not found" : 0;
-        }
-
-        $doc = new DOMDocument();
-        @$doc->load($filePath);
-
-        if (!$doc->documentElement) {
-            return ($dim === "string") ? "Cannot parse SVG" : 0;
-        }
-
-        $root = $doc->documentElement;
-
-        if ($root->hasAttribute('viewBox')) {
-            $vbox = preg_split('/[\s,]+/', $root->getAttribute('viewBox'));
-            $width = (float)$vbox[2] - (float)$vbox[0];
-            $height = (float)$vbox[3] - (float)$vbox[1];
-        } elseif ($root->hasAttribute('width')) {
-            $width = (float)$root->getAttribute('width');
-            $height = (float)$root->getAttribute('height');
-        } else {
-            return ($dim === "string") ? "Scalable (no dimensions)" : 0;
-        }
-
-        if ($dim === "string") {
-            return "{$width}x{$height}";
-        }
-
-        return ($dim === 0) ? $width : $height;
-    }
-
-    /**
-     * Get SVG width from viewBox or width attribute.
-     *
-     * @return int
-     */
-    public function getWidth(): int
-    {
-        if ($this->getExtension() === 'svg') {
-            return (int)$this->getDimensions(0);
-        }
-
-        return parent::getWidth();
-    }
-
-    /**
-     * Get SVG height from viewBox or height attribute.
-     *
-     * @return int
-     */
-    public function getHeight(): int
-    {
-        if ($this->getExtension() === 'svg') {
-            return (int)$this->getDimensions(1);
-        }
-
-        return parent::getHeight();
-    }
-
     /**
      * Check if this file is an SVG.
      *
@@ -212,10 +30,6 @@ class SVGImage extends Image
     {
         return $this->getExtension() === 'svg';
     }
-
-    // =========================================================================
-    // SVG Manipulation Engine
-    // =========================================================================
 
     /**
      * Get the Imagine SVG instance for this file.
@@ -247,9 +61,17 @@ class SVGImage extends Image
     }
 
     /**
-     * Manipulate an SVG and store the result as a variant.
+     * Check if SVG manipulation is enabled.
      *
-     * Similar to manipulateImage() but uses contao/imagine-svg for vector manipulation.
+     * @return bool
+     */
+    protected function isSVGManipulationEnabled(): bool
+    {
+        return SVGImage::config()->get('enable_svg_manipulation') && class_exists(Imagine::class);
+    }
+
+    /**
+     * Manipulate an SVG and store the result as a variant.
      *
      * @param string $variant Variant name for caching
      * @param callable $callback Function that receives Imagine SVG image and returns modified image
@@ -336,22 +158,46 @@ class SVGImage extends Image
     }
 
     /**
-     * Check if SVG manipulation is enabled.
+     * Get SVG width.
      *
-     * @return bool
+     * @return int
      */
-    protected function isSVGManipulationEnabled(): bool
+    public function getWidth(): int
     {
-        return static::config()->get('enable_svg_manipulation') && class_exists(Imagine::class);
+        if ($this->IsSVG()) {
+            $svgImage = $this->getImagineSVG();
+            if ($svgImage) {
+                return $svgImage->getSize()->getWidth();
+            }
+            return 0;
+        }
+
+        return parent::getWidth();
+    }
+
+    /**
+     * Get SVG height.
+     *
+     * @return int
+     */
+    public function getHeight(): int
+    {
+        if ($this->IsSVG()) {
+            $svgImage = $this->getImagineSVG();
+            if ($svgImage) {
+                return $svgImage->getSize()->getHeight();
+            }
+            return 0;
+        }
+
+        return parent::getHeight();
     }
 
     // =========================================================================
-    // Image manipulation overrides
+    // SVG manipulation overrides
     // =========================================================================
 
     /**
-     * Resize to fit within the given dimensions, maintaining aspect ratio.
-     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -376,8 +222,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Resize to fit within the given dimensions, only if larger.
-     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -392,7 +236,6 @@ class SVGImage extends Image
             return $this;
         }
 
-        // Only resize if current dimensions exceed target
         $currentWidth = $this->getWidth();
         $currentHeight = $this->getHeight();
 
@@ -404,8 +247,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Scale to the given width, maintaining aspect ratio.
-     *
      * @param int $width
      * @return AssetContainer|null
      */
@@ -436,8 +277,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Scale to the given height, maintaining aspect ratio.
-     *
      * @param int $height
      * @return AssetContainer|null
      */
@@ -468,8 +307,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Crop and resize to fill the given dimensions exactly.
-     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -521,8 +358,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Crop and resize to fill the given dimensions, only if larger.
-     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -547,6 +382,13 @@ class SVGImage extends Image
         return $this->Fill($width, $height);
     }
 
+    /**
+     * @param int $width
+     * @param int $height
+     * @param string $backgroundColor
+     * @param int $transparencyPercent
+     * @return AssetContainer|null
+     */
     /**
      * Pad to the given dimensions with transparent padding.
      *
@@ -602,9 +444,6 @@ class SVGImage extends Image
                 $vbHeight = $currentHeight;
             }
 
-            // Calculate scale to fit content within target
-            $scale = min($width / $vbWidth, $height / $vbHeight);
-
             // Calculate the viewBox dimensions needed for the target aspect ratio
             $targetAspect = $width / $height;
             $currentAspect = $vbWidth / $vbHeight;
@@ -633,37 +472,11 @@ class SVGImage extends Image
     }
 
     /**
-     * Crop to specific region.
-     *
-     * @param int $x X offset
-     * @param int $y Y offset
-     * @param int $width Crop width
-     * @param int $height Crop height
-     * @return AssetContainer|null
-     */
-    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
-    {
-        if (!$this->IsSVG()) {
-            return null;
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this;
-        }
-
-        $variant = $this->variantName(__FUNCTION__, $x, $y, $width, $height);
-
-        return $this->manipulateSVG($variant, function (\Contao\ImagineSvg\Image $image) use ($x, $y, $width, $height) {
-            return $image->crop(new Point($x, $y), new Box($width, $height));
-        }) ?: $this;
-    }
-
-    /**
      * @return AssetContainer|null
      */
     public function CMSThumbnail()
     {
-        if ($this->getExtension() === 'svg') {
+        if ($this->IsSVG()) {
             // For CMS thumbnails, just return self - SVGs scale nicely
             return $this;
         }
@@ -675,110 +488,9 @@ class SVGImage extends Image
      */
     public function StripThumbnail()
     {
-        if ($this->getExtension() === 'svg') {
+        if ($this->IsSVG()) {
             return $this;
         }
         return parent::StripThumbnail();
-    }
-
-    // =========================================================================
-    // CMS Preview support
-    // =========================================================================
-
-    /**
-     * Override existingOnly() to properly handle SVGs.
-     *
-     * Returns an SVGDBFile (like parent returns DBFile) so that subsequent
-     * manipulation calls use our SVG-specific implementations while having
-     * proper URL generation for thumbnail contexts.
-     *
-     * @return SVGDBFile|DBFile
-     */
-    public function existingOnly()
-    {
-        if ($this->getExtension() === 'svg') {
-            $result = SVGDBFile::createFromTuple([
-                'Filename' => $this->getFilename(),
-                'Hash' => $this->getHash(),
-                'Variant' => $this->getVariant(),
-            ]);
-            $result->setAllowGeneration(false);
-            return $result;
-        }
-
-        return parent::existingOnly();
-    }
-
-    /**
-     * Return CMS preview link.
-     *
-     * @param string|null $action
-     * @return string|null
-     */
-    public function PreviewLink($action = null): ?string
-    {
-        if ($this->getExtension() === 'svg') {
-            if (!$this->canView()) {
-                return null;
-            }
-            return $this->getURL();
-        }
-
-        return parent::PreviewLink($action);
-    }
-
-    // =========================================================================
-    // Database migration
-    // =========================================================================
-
-    /**
-     * Migrate existing SVG files to SVGImage class on dev/build.
-     */
-    public function requireDefaultRecords(): void
-    {
-        parent::requireDefaultRecords();
-
-        if (!static::config()->get('auto_migrate_svg_class')) {
-            return;
-        }
-
-        $svgClassName = static::class;
-        $tables = ['File', 'File_Live', 'File_Versions'];
-
-        foreach ($tables as $table) {
-            $result = DB::query(
-                "SELECT COUNT(*) FROM \"{$table}\" WHERE \"Name\" LIKE '%.svg' AND \"ClassName\" != ?",
-                [$svgClassName]
-            );
-            $count = $result->value();
-
-            if ($count > 0) {
-                DB::query(
-                    "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"Name\" LIKE '%.svg' AND \"ClassName\" != ?",
-                    [$svgClassName, $svgClassName]
-                );
-                DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
-            }
-        }
-    }
-
-    /**
-     * Return raw SVG content for inline embedding.
-     *
-     * @return DBField|null
-     */
-    public function SVG_RAW_Inline()
-    {
-        if (!$this->IsSVG()) {
-            return null;
-        }
-
-        $filePath = Path::join(Director::publicFolder(), $this->getURL());
-
-        if (is_file($filePath)) {
-            return DBField::create_field('HTMLFragment', file_get_contents($filePath));
-        }
-
-        return null;
     }
 }
