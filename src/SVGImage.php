@@ -13,10 +13,7 @@ use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Assets\Storage\DBFile;
-use SilverStripe\Control\Controller;
-use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripe\Core\Path;
 use SilverStripe\ORM\DB;
 use SilverStripe\ORM\FieldType\DBField;
 
@@ -142,14 +139,14 @@ class SVGImage extends Image
             return parent::getDimensions($dim);
         }
 
-        $filePath = Path::join(Director::publicFolder(), $this->getURL());
-
-        if (!is_file($filePath)) {
+        // Use getString() to support both public and protected/draft files
+        $content = $this->getString();
+        if (empty($content)) {
             return ($dim === "string") ? "File not found" : 0;
         }
 
         $doc = new DOMDocument();
-        @$doc->load($filePath);
+        @$doc->loadXML($content);
 
         if (!$doc->documentElement) {
             return ($dim === "string") ? "Cannot parse SVG" : 0;
@@ -681,6 +678,24 @@ class SVGImage extends Image
         return parent::StripThumbnail();
     }
 
+    /**
+     * Override ThumbnailURL to return the SVG URL directly.
+     * This prevents the ThumbnailGenerator from trying to manipulate SVG files.
+     *
+     * @param int $width
+     * @param int $height
+     * @return string|null
+     */
+    public function ThumbnailURL($width, $height)
+    {
+        if ($this->getExtension() === 'svg') {
+            // Pass true to grant access for draft/protected files
+            return $this->getURL(true);
+        }
+
+        return parent::ThumbnailURL($width, $height);
+    }
+
     // =========================================================================
     // CMS Preview support
     // =========================================================================
@@ -721,7 +736,8 @@ class SVGImage extends Image
             if (!$this->canView()) {
                 return null;
             }
-            return $this->getURL();
+            // Pass true to grant access for draft/protected files
+            return $this->getURL(true);
         }
 
         return parent::PreviewLink($action);
@@ -746,15 +762,22 @@ class SVGImage extends Image
         $tables = ['File', 'File_Live', 'File_Versions'];
 
         foreach ($tables as $table) {
-            $result = DB::query(
-                "SELECT COUNT(*) FROM \"{$table}\" WHERE \"Name\" LIKE '%.svg' AND \"ClassName\" != ?",
+            // Check if table exists (File_Live/File_Versions may not exist without full versioning)
+            if (!DB::get_schema()->hasTable($table)) {
+                continue;
+            }
+
+            // Query must handle NULL/empty ClassName values explicitly
+            // (SQL "!= ?" doesn't match NULL values)
+            $result = DB::prepared_query(
+                "SELECT COUNT(*) FROM \"{$table}\" WHERE \"Name\" LIKE '%.svg' AND (\"ClassName\" IS NULL OR \"ClassName\" = '' OR \"ClassName\" != ?)",
                 [$svgClassName]
             );
             $count = $result->value();
 
             if ($count > 0) {
-                DB::query(
-                    "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"Name\" LIKE '%.svg' AND \"ClassName\" != ?",
+                DB::prepared_query(
+                    "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"Name\" LIKE '%.svg' AND (\"ClassName\" IS NULL OR \"ClassName\" = '' OR \"ClassName\" != ?)",
                     [$svgClassName, $svgClassName]
                 );
                 DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
@@ -769,14 +792,14 @@ class SVGImage extends Image
      */
     public function SVG_RAW_Inline()
     {
-        if (!$this->IsSVG()) {
+        if (!$this->IsSVG() || !$this->exists()) {
             return null;
         }
 
-        $filePath = Path::join(Director::publicFolder(), $this->getURL());
-
-        if (is_file($filePath)) {
-            return DBField::create_field('HTMLFragment', file_get_contents($filePath));
+        // Use getString() to support both public and protected/draft files
+        $content = $this->getString();
+        if (!empty($content)) {
+            return DBField::create_field('HTMLFragment', $content);
         }
 
         return null;

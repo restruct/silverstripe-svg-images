@@ -50,4 +50,34 @@ class SVGDBFile extends DBFile
         $file = DBField::create_field(self::class, $tuple);
         return $file;
     }
+
+    /**
+     * Override ThumbnailURL to return the SVG URL directly with grant access.
+     *
+     * @param int $width
+     * @param int $height
+     * @return string|null
+     */
+    public function ThumbnailURL($width, $height)
+    {
+        if ($this->getExtension() === 'svg') {
+            return $this->getURL(true);
+        }
+
+        return parent::ThumbnailURL($width, $height);
+    }
+
+    /**
+     * Return URL with grant access for protected/draft files.
+     *
+     * @return string|null
+     */
+    public function Link()
+    {
+        if ($this->getExtension() === 'svg') {
+            return $this->getURL(true);
+        }
+
+        return parent::Link();
+    }
 }

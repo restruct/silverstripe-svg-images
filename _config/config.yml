@@ -2,7 +2,10 @@
 Name: svgassetsfiletype
 After: '#assetsfiletypes'
 ---
+# Convert SVG uploads to SVGImage class automatically
 SilverStripe\Assets\File:
+  extensions:
+    - Restruct\Silverstripe\SVG\SVGImageExtension
   file_types:
     svg: 'SVG Image'
   allowed_extensions:
