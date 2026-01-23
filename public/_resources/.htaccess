@@ -1,0 +1,10 @@
+# Block .method file
+<Files .method>
+    Require all denied
+</Files>
+
+# Prevent file listings
+<IfModule mod_dir.c>
+    DirectoryIndex disabled
+    DirectorySlash On
+</IfModule>

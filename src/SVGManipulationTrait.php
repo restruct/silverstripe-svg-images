@@ -35,6 +35,7 @@ trait SVGManipulationTrait
      * Get the Imagine SVG instance for this file.
      *
      * Uses getString() to support both public and protected/draft assets.
+     * Returns null if the SVG cannot be parsed (graceful degradation).
      *
      * @return \Contao\ImagineSvg\Image|null
      */
@@ -50,8 +51,13 @@ trait SVGManipulationTrait
             return null;
         }
 
-        $imagine = new Imagine();
-        return $imagine->load($content);
+        try {
+            $imagine = new Imagine();
+            return $imagine->load($content);
+        } catch (\Exception $e) {
+            // Malformed SVG - return null to trigger graceful fallback
+            return null;
+        }
     }
 
     /**
@@ -117,33 +123,38 @@ trait SVGManipulationTrait
             return null;
         }
 
-        // Apply manipulation callback
-        $result = $callback($svgImage);
+        try {
+            // Apply manipulation callback
+            $result = $callback($svgImage);
 
-        if (!$result instanceof \Contao\ImagineSvg\Image) {
+            if (!$result instanceof \Contao\ImagineSvg\Image) {
+                return null;
+            }
+
+            // Get manipulated SVG as string
+            $svgContent = $result->get('svg');
+
+            // Store the variant
+            $tuple = $store->setFromString(
+                $svgContent,
+                $filename,
+                $hash,
+                $variant,
+                ['conflict' => AssetStore::CONFLICT_USE_EXISTING]
+            );
+
+            if (!$tuple) {
+                return null;
+            }
+
+            // Return SVGDBFile so chained manipulations continue to work
+            /** @var SVGDBFile $file */
+            $file = DBField::create_field(SVGDBFile::class, $tuple);
+            return $file;
+        } catch (\Exception $e) {
+            // Manipulation failed - return null to trigger graceful fallback
             return null;
         }
-
-        // Get manipulated SVG as string
-        $svgContent = $result->get('svg');
-
-        // Store the variant
-        $tuple = $store->setFromString(
-            $svgContent,
-            $filename,
-            $hash,
-            $variant,
-            ['conflict' => AssetStore::CONFLICT_USE_EXISTING]
-        );
-
-        if (!$tuple) {
-            return null;
-        }
-
-        // Return SVGDBFile so chained manipulations continue to work
-        /** @var SVGDBFile $file */
-        $file = DBField::create_field(SVGDBFile::class, $tuple);
-        return $file;
     }
 
     /**
