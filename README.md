@@ -6,6 +6,7 @@ This module provides comprehensive SVG support in SilverStripe's asset managemen
 - **Real SVG manipulation** (resize, crop) that modifies viewBox/dimensions while preserving vectors
 - **SVG sanitization** on upload to remove potentially dangerous content
 - **Dimension parsing** from SVG viewBox/width/height attributes
+- **Automatic class handling** for SVGs uploaded through Image relations
 
 ## Installation
 
@@ -16,6 +17,12 @@ composer require restruct/silverstripe-svg-images
 ## How it works
 
 The module configures SilverStripe to use the `SVGImage` class for `.svg` files via `class_for_file_extension`. This happens automatically for files uploaded through AssetAdmin.
+
+### SVG uploads through Image relations
+
+When uploading SVGs through relation fields (`has_one`, `has_many`, or `many_many` to `Image`), SilverStripe's ORM enforces the relation's class type, ignoring the `class_for_file_extension` config. This module includes `SVGImageExtension` which automatically corrects the `ClassName` to `SVGImage` after the file is written.
+
+This happens transparently - no configuration needed.
 
 ### SVG Manipulation
 
@@ -29,7 +36,10 @@ Supported operations:
 - `Pad($width, $height)` - Fit within bounds and add transparent padding to reach exact dimensions
 - `ScaleWidth($width)` - Scale to specific width, maintaining aspect ratio
 - `ScaleHeight($height)` - Scale to specific height, maintaining aspect ratio
+- `ScaleMaxWidth($width)` - Scale to max width, only if larger
+- `ScaleMaxHeight($height)` - Scale to max height, only if larger
 - `CropRegion($x, $y, $width, $height)` - Crop to specific region
+- `Resampled()` - Returns the SVG unchanged (for compatibility with Image templates)
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
 
@@ -68,32 +78,26 @@ Restruct\Silverstripe\SVG\SVGImage:
   auto_migrate_svg_class: true
 ```
 
-Then run `dev/build`. The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables.
+Then run `dev/build`. The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables (including files with NULL or empty ClassName).
 
 > **Note:** The migration runs via `requireDefaultRecords()`. If you use `dev/build no-populate=1`, the migration will be skipped. Run `dev/build/defaults` separately to trigger it, or run a normal `dev/build` without `no-populate`.
-
-### Using SVGImage for has_one Image relations
-
-By default, `has_one` relations to `Image` will instantiate the `Image` class directly. To have SVG files load as `SVGImage` in these relations, configure the Injector:
-
-```yaml
-SilverStripe\Core\Injector\Injector:
-  SilverStripe\Assets\Image:
-    class: Restruct\Silverstripe\SVG\SVGImage
-```
-
-Note: This may conflict with other modules that also use the Injector for Image.
 
 ## Usage in templates
 
 ```html
-<!-- Add SVG as image (will be manipulated if methods called) -->
+<!-- Basic usage -->
 <img src="$Image.URL" />
+
+<!-- With manipulation (preserves vector format) -->
 <img src="$Image.ScaleWidth(200).URL" />
 <img src="$Image.Fill(100, 100).URL" />
+<img src="$Image.Fit(300, 200).URL" />
 
 <!-- Responsive example -->
 <img src="$Image.ScaleWidth(400).URL" srcset="$Image.ScaleWidth(800).URL 2x" />
+
+<!-- Works in mixed image/SVG contexts -->
+<img src="$Image.Resampled.URL" />
 ```
 
 ### Inline SVG
@@ -126,7 +130,7 @@ SVGs can expose attack vectors comparable to HTML/JS. This module mitigates risk
 - Use `<img>` tags rather than inline SVG when possible (provides more browser security)
 - Keep the sanitization enabled (default)
 
-For more information on SVG security risks, see [defusedxml documentation](https://pypi.org/project/defusedxml/#php).
+For more information on SVG security risks, see [OWASP SVG Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SVG_Security_Cheat_Sheet.html).
 
 ## Configuration reference
 
