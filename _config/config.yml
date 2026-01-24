@@ -2,9 +2,14 @@
 Name: svgassetsfiletype
 After: '#assetsfiletypes'
 ---
+SilverStripe\Control\Director:
+  rules:
+    'dev/svg-compare': 'Restruct\Silverstripe\SVG\Controllers\SVGCompareController'
+
+
 SilverStripe\Assets\File:
   extensions:
-    - Restruct\Silverstripe\SVG\SVGFileExtension
+    - Restruct\Silverstripe\SVG\SVGImageExtension
   file_types:
     svg: 'SVG Image'
   allowed_extensions:
