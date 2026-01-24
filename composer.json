@@ -2,7 +2,7 @@
   "name": "restruct/silverstripe-svg-images",
   "description": "SVG Image support for Silverstripe with real manipulation and sanitization",
   "type": "silverstripe-vendormodule",
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "keywords": [
     "silverstripe",
     "svg"

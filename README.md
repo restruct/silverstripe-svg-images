@@ -163,3 +163,7 @@ vendor/bin/sake tasks:ClearSVGVariantsTask --confirm --verbose
 ```
 
 Variants will be regenerated on next request using the current manipulation settings.
+
+## Technical Documentation
+
+For implementation details, architecture decisions, and explanations of why things are implemented in specific ways, see [TECHNICAL.md](TECHNICAL.md).
