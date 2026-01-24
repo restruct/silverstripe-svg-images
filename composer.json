@@ -14,7 +14,7 @@
     }
   ],
   "require": {
-    "silverstripe/cms": "^4 || ^5",
+    "silverstripe/assets": "^1 || ^2",
     "contao/imagine-svg": "^1.0",
     "enshrined/svg-sanitize": "^0.20"
   },
