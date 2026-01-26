@@ -7,10 +7,7 @@ use SilverStripe\Assets\File;
 use SilverStripe\Assets\Folder;
 use SilverStripe\Assets\Image;
 use SilverStripe\Control\Controller;
-use SilverStripe\Control\Director;
 use SilverStripe\Control\HTTPRequest;
-use SilverStripe\Security\Permission;
-use SilverStripe\Security\Security;
 use SilverStripe\View\ArrayData;
 use SilverStripe\ORM\ArrayList;
 
@@ -33,20 +30,29 @@ class SVGCompareController extends Controller
         'index',
     ];
 
-    private static $test_folder = 'svg-compare-test';
-    private static $test_svg_name = 'test-pub.svg';
-    private static $test_png_name = 'test-pub.png';
-    private static $test_svg_draft_name = 'test-draft.svg';
-    private static $test_png_draft_name = 'test-draft.png';
+    private static $test_folder = 'devtest-svg';
+    private static $test_svg_name = 'svgtest-pub.svg';
+    private static $test_png_name = 'svgtest-pub.png';
+    private static $test_svg_draft_name = 'svgtest-draft.svg';
+    private static $test_png_draft_name = 'svgtest-draft.png';
 
     protected function init(): void
     {
         parent::init();
+        // Security handled by DevelopmentAdmin middleware (CSRF protection, auth)
+    }
 
-        // Only allow in dev mode or for admins
-        if (!Director::isDev() && !Permission::check('ADMIN')) {
-            Security::permissionFailure($this);
+    /**
+     * Override Link() for registered_controllers compatibility.
+     * When accessed via DevelopmentAdmin, we need to return the full dev/* path.
+     */
+    public function Link($action = null): string
+    {
+        $link = '/' . self::config()->get('url_segment');
+        if ($action) {
+            $link .= $action;
         }
+        return $link;
     }
 
     public function index(HTTPRequest $request)
@@ -112,6 +118,7 @@ class SVGCompareController extends Controller
             'Error' => $error,
             'TestImagesInstalled' => $testImagesInstalled,
             'InstallURL' => $this->Link('?install=1'),
+            'TestFolder' => self::config()->get('test_folder'),
         ])->renderWith(['Restruct/Silverstripe/SVG/SVGCompare']);
     }
 
@@ -164,6 +171,7 @@ class SVGCompareController extends Controller
             'DraftComparisons' => $draftComparisons,
             'OriginalDraftSVG' => $draftSvg ? $this->getImageData($draftSvg) : null,
             'OriginalDraftPNG' => $draftPng ? $this->getImageData($draftPng) : null,
+            'HasFocusPointModule' => $this->hasFocusPointExtension(),
         ])->renderWith(['Restruct/Silverstripe/SVG/SVGCompare']);
     }
 
@@ -181,20 +189,33 @@ class SVGCompareController extends Controller
         $folder = Folder::find_or_make(self::config()->get('test_folder'));
         $folderPath = rtrim($folder->getFilename(), '/');
 
+        // Check if FocusPoint module is available
+        $hasFocusPoint = $this->hasFocusPointExtension();
+
         // Generate all test content from strings (no file path dependencies)
-        $svgContent = $this->generateTestSVG(false);
-        $svgDraftContent = $this->generateTestSVG(true);
-        $pngContent = $this->generateTestPNG(false);
-        $pngDraftContent = $this->generateTestPNG(true);
+        // Include crosshair in images when FocusPoint module is available
+        $svgContent = $this->generateTestSVG(false, $hasFocusPoint);
+        $svgDraftContent = $this->generateTestSVG(true, $hasFocusPoint);
+        $pngContent = $this->generateTestPNG(false, $hasFocusPoint);
+        $pngDraftContent = $this->generateTestPNG(true, $hasFocusPoint);
 
         if (!$pngContent || !$pngDraftContent) {
             return 'Could not generate PNG test images. Is the GD extension (ext-gd) installed?';
         }
 
+        // FocusPoint at (180, 130) on 200x150 image - bottom right of triangle
+        // Converted to -1 to 1 scale: X = (180/200)*2-1 = 0.8, Y = (130/150)*2-1 = 0.73
+        $focusPointX = 0.8;
+        $focusPointY = 0.73;
+
         // Install PUBLISHED SVG
         $svg = SVGImage::create();
         $svg->setFromString($svgContent, $folderPath . '/' . self::config()->get('test_svg_name'));
         $svg->Title = 'SVG Compare Test (Published)';
+        if ($hasFocusPoint) {
+            $svg->FocusPointX = $focusPointX;
+            $svg->FocusPointY = $focusPointY;
+        }
         $svg->write();
         $svg->publishSingle();
 
@@ -202,6 +223,10 @@ class SVGCompareController extends Controller
         $png = Image::create();
         $png->setFromString($pngContent, $folderPath . '/' . self::config()->get('test_png_name'));
         $png->Title = 'PNG Compare Test (Published)';
+        if ($hasFocusPoint) {
+            $png->FocusPointX = $focusPointX;
+            $png->FocusPointY = $focusPointY;
+        }
         $png->write();
         $png->publishSingle();
 
@@ -209,43 +234,50 @@ class SVGCompareController extends Controller
         $svgDraft = SVGImage::create();
         $svgDraft->setFromString($svgDraftContent, $folderPath . '/' . self::config()->get('test_svg_draft_name'));
         $svgDraft->Title = 'SVG Compare Test (Draft/Unpublished)';
+        if ($hasFocusPoint) {
+            $svgDraft->FocusPointX = $focusPointX;
+            $svgDraft->FocusPointY = $focusPointY;
+        }
         $svgDraft->write();
 
         // Install DRAFT PNG (not published)
         $pngDraft = Image::create();
         $pngDraft->setFromString($pngDraftContent, $folderPath . '/' . self::config()->get('test_png_draft_name'));
         $pngDraft->Title = 'PNG Compare Test (Draft/Unpublished)';
+        if ($hasFocusPoint) {
+            $pngDraft->FocusPointX = $focusPointX;
+            $pngDraft->FocusPointY = $focusPointY;
+        }
         $pngDraft->write();
 
         return null;
     }
 
     /**
-     * Remove test images from the database.
+     * Remove test images from the database and filesystem.
      */
     protected function removeTestImages(): void
     {
         $folderName = self::config()->get('test_folder');
 
-        // Find and delete all test files
+        // Find and delete all test files (both published and draft)
         foreach ([false, true] as $draft) {
             $svg = $this->getBundledTestSVG($draft);
             if ($svg) {
-                $svg->deleteFromStage('Live');
-                $svg->delete();
+                // doArchive() removes from all stages and deletes the physical file
+                $svg->doArchive();
             }
 
             $png = $this->getBundledTestPNG($draft);
             if ($png) {
-                $png->deleteFromStage('Live');
-                $png->delete();
+                $png->doArchive();
             }
         }
 
-        // Delete folder if empty
+        // Delete folder only if empty (no other files inside)
         $folder = Folder::find($folderName);
         if ($folder && $folder->myChildren()->count() === 0) {
-            $folder->delete();
+            $folder->doArchive();
         }
     }
 
@@ -262,13 +294,16 @@ class SVGCompareController extends Controller
      */
     protected function getBundledTestSVG(bool $draft = false): ?SVGImage
     {
+        $folderName = self::config()->get('test_folder');
         $fileName = $draft
             ? self::config()->get('test_svg_draft_name')
             : self::config()->get('test_svg_name');
 
-        // Try by Name first (most reliable), then by FileFilename
-        return SVGImage::get()->filter('Name', $fileName)->first()
-            ?: SVGImage::get()->filter('FileFilename:EndsWith', $fileName)->first();
+        // Filter by folder path to avoid matching files with same name elsewhere
+        return SVGImage::get()
+            ->filter('FileFilename:StartsWith', $folderName . '/')
+            ->filter('Name', $fileName)
+            ->first();
     }
 
     /**
@@ -276,22 +311,38 @@ class SVGCompareController extends Controller
      */
     protected function getBundledTestPNG(bool $draft = false): ?Image
     {
+        $folderName = self::config()->get('test_folder');
         $fileName = $draft
             ? self::config()->get('test_png_draft_name')
             : self::config()->get('test_png_name');
 
-        // Try by Name first (most reliable), then by FileFilename
-        return Image::get()->filter('Name', $fileName)->first()
-            ?: Image::get()->filter('FileFilename:EndsWith', $fileName)->first();
+        // Filter by folder path to avoid matching files with same name elsewhere
+        return Image::get()
+            ->filter('FileFilename:StartsWith', $folderName . '/')
+            ->filter('Name', $fileName)
+            ->first();
     }
 
     /**
      * Generate SVG test image as a string.
      */
-    protected function generateTestSVG(bool $draft = false): string
+    protected function generateTestSVG(bool $draft = false, bool $includeFocusPoint = false): string
     {
         $bgColor = $draft ? '#8e44ad' : '#3498db';
         $text = $draft ? 'SVG Draft' : 'SVG Test';
+
+        // FocusPoint crosshair at bottom right of triangle (180, 130)
+        $focusPointMarker = '';
+        if ($includeFocusPoint) {
+            $fpX = 180;
+            $fpY = 130;
+            $focusPointMarker = <<<FP
+  <!-- FocusPoint marker (crosshair) -->
+  <circle cx="{$fpX}" cy="{$fpY}" r="8" fill="none" stroke="white" stroke-width="2"/>
+  <line x1="{$fpX}" y1="118" x2="{$fpX}" y2="142" stroke="white" stroke-width="2"/>
+  <line x1="168" y1="{$fpY}" x2="192" y2="{$fpY}" stroke="white" stroke-width="2"/>
+FP;
+        }
 
         return <<<SVG
 <?xml version="1.0" encoding="UTF-8"?>
@@ -301,6 +352,7 @@ class SVGCompareController extends Controller
   <rect x="110" y="35" width="70" height="80" fill="#2ecc71" rx="5"/>
   <polygon points="145,115 110,145 180,145" fill="#f39c12"/>
   <text x="100" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">{$text}</text>
+{$focusPointMarker}
 </svg>
 SVG;
     }
@@ -308,7 +360,7 @@ SVG;
     /**
      * Generate a PNG test image that matches the SVG.
      */
-    protected function generateTestPNG(bool $draft = false): ?string
+    protected function generateTestPNG(bool $draft = false, bool $includeFocusPoint = false): ?string
     {
         if (!function_exists('imagecreatetruecolor')) {
             return null;
@@ -316,6 +368,8 @@ SVG;
 
         $width = 200;
         $height = 150;
+        $fpX = 180; // FocusPoint X - bottom right of triangle
+        $fpY = 130; // FocusPoint Y
 
         $img = imagecreatetruecolor($width, $height);
         imagealphablending($img, true);
@@ -341,6 +395,14 @@ SVG;
         $textWidth = imagefontwidth(3) * strlen($text);
         imagestring($img, 3, (int)(($width - $textWidth) / 2), 10, $text, $white);
 
+        // FocusPoint crosshair marker at bottom right of triangle
+        if ($includeFocusPoint) {
+            imagesetthickness($img, 2);
+            imageellipse($img, $fpX, $fpY, 16, 16, $white);
+            imageline($img, $fpX, $fpY - 12, $fpX, $fpY + 12, $white);
+            imageline($img, $fpX - 12, $fpY, $fpX + 12, $fpY, $white);
+        }
+
         ob_start();
         imagepng($img);
         $content = ob_get_clean();
@@ -354,7 +416,7 @@ SVG;
      */
     protected function getManipulations(): array
     {
-        return [
+        $manipulations = [
             // Fit - scale to fit within bounds
             ['method' => 'Fit', 'args' => [150, 150], 'label' => 'Fit(150, 150)'],
             ['method' => 'Fit', 'args' => [200, 100], 'label' => 'Fit(200, 100)'],
@@ -407,6 +469,27 @@ SVG;
                 'label' => 'Fill(150, 150)->ScaleWidth(100)',
             ],
         ];
+
+        // Add focus methods (requires jonom/focuspoint)
+        if ($this->hasFocusPointExtension()) {
+            $manipulations = array_merge($manipulations, [
+                ['method' => 'FocusFill', 'args' => [150, 150], 'label' => 'FocusFill(150, 150)', 'optional' => 'focuspoint'],
+                ['method' => 'FocusFill', 'args' => [200, 100], 'label' => 'FocusFill(200, 100)', 'optional' => 'focuspoint'],
+                ['method' => 'FocusFillMax', 'args' => [150, 150], 'label' => 'FocusFillMax(150, 150)', 'optional' => 'focuspoint'],
+                ['method' => 'FocusCropWidth', 'args' => [150], 'label' => 'FocusCropWidth(150)', 'optional' => 'focuspoint'],
+                ['method' => 'FocusCropHeight', 'args' => [100], 'label' => 'FocusCropHeight(100)', 'optional' => 'focuspoint'],
+            ]);
+        }
+
+        return $manipulations;
+    }
+
+    /**
+     * Check if the FocusPoint extension is available.
+     */
+    protected function hasFocusPointExtension(): bool
+    {
+        return class_exists(\JonoM\FocusPoint\Extensions\FocusPointImageExtension::class);
     }
 
     /**
@@ -428,6 +511,7 @@ SVG;
                 'SVG' => $svgData,
                 'PNG' => $pngData,
                 'IsChained' => isset($manipulation['chain']),
+                'UsesFocusPoint' => ($manipulation['optional'] ?? null) === 'focuspoint',
             ]);
         } catch (\Exception $e) {
             return ArrayData::create([

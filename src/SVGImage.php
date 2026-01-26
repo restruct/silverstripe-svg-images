@@ -3,7 +3,6 @@
 namespace Restruct\Silverstripe\SVG;
 
 use Contao\ImagineSvg\Imagine;
-use Contao\ImagineSvg\SvgBox;
 use DOMDocument;
 use enshrined\svgSanitize\Sanitizer;
 use Imagine\Image\Box;
@@ -626,32 +625,6 @@ class SVGImage extends Image
             $root->setAttribute('height', (string)$height);
 
             return $image;
-        }) ?: $this;
-    }
-
-    /**
-     * Crop to specific region.
-     *
-     * @param int $x X offset
-     * @param int $y Y offset
-     * @param int $width Crop width
-     * @param int $height Crop height
-     * @return AssetContainer|null
-     */
-    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
-    {
-        if (!$this->IsSVG()) {
-            return null;
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this;
-        }
-
-        $variant = $this->variantName(__FUNCTION__, $x, $y, $width, $height);
-
-        return $this->manipulateSVG($variant, function (\Contao\ImagineSvg\Image $image) use ($x, $y, $width, $height) {
-            return $image->crop(new Point($x, $y), new Box($width, $height));
         }) ?: $this;
     }
 

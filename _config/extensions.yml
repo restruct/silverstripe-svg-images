@@ -1,0 +1,25 @@
+---
+Name: svg-cropper-extension
+Only:
+  moduleexists: restruct/silverstripe-focuspointcropper
+---
+Restruct\Silverstripe\SVG\SVGImage:
+  extensions:
+    - Restruct\Silverstripe\SVG\Extensions\SVGCropperExtension
+
+Restruct\Silverstripe\SVG\SVGDBFile:
+  extensions:
+    - Restruct\Silverstripe\SVG\Extensions\SVGCropperExtension
+
+---
+Name: svg-focuspoint-extension
+Only:
+  moduleexists: jonom/focuspoint
+---
+Restruct\Silverstripe\SVG\SVGImage:
+  extensions:
+    - Restruct\Silverstripe\SVG\Extensions\SVGFocusPointExtension
+
+Restruct\Silverstripe\SVG\SVGDBFile:
+  extensions:
+    - Restruct\Silverstripe\SVG\Extensions\SVGFocusPointExtension

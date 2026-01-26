@@ -1,6 +1,6 @@
-# SVG Image support for SilverStripe 4/5 (assets/uploads)
+# SVG Image support for Silverstripe (assets/uploads)
 
-This module provides comprehensive SVG support in SilverStripe's asset management system, including:
+This module provides comprehensive SVG support in Silverstripe's asset management system, including:
 
 - **CMS thumbnail/preview support** for SVG files in AssetAdmin
 - **Real SVG manipulation** (resize, crop) that modifies viewBox/dimensions while preserving vectors
@@ -8,19 +8,23 @@ This module provides comprehensive SVG support in SilverStripe's asset managemen
 - **Dimension parsing** from SVG viewBox/width/height attributes
 - **Automatic class handling** for SVGs uploaded through Image relations
 
-## Installation
+## Version Compatibility
 
-```bash
-composer require restruct/silverstripe-svg-images
-```
+| Branch | Module Version | Silverstripe | PHP |
+|--------|----------------|--------------|-----|
+| `main` | `2.x` | ^6.0 | ^8.3 |
+| `1` | `1.x` | ^4.0 \|\| ^5.0 | ^7.4 \|\| ^8.0 |
+| `0` | `0.x` | ~3.7 | ^5.6 \|\| ^7.0 |
+
+**Note:** `composer.json` is the source of truth for exact version constraints.
 
 ## How it works
 
-The module configures SilverStripe to use the `SVGImage` class for `.svg` files via `class_for_file_extension`. This happens automatically for files uploaded through AssetAdmin.
+The module configures Silverstripe to use the `SVGImage` class for `.svg` files via `class_for_file_extension`. This happens automatically for files uploaded through AssetAdmin.
 
 ### SVG uploads through Image relations
 
-When uploading SVGs through relation fields (`has_one`, `has_many`, or `many_many` to `Image`), SilverStripe's ORM enforces the relation's class type, ignoring the `class_for_file_extension` config. This module includes `SVGImageExtension` which automatically corrects the `ClassName` to `SVGImage` after the file is written.
+When uploading SVGs through relation fields (`has_one`, `has_many`, or `many_many` to `Image`), Silverstripe's ORM enforces the relation's class type, ignoring the `class_for_file_extension` config. This module includes `SVGImageExtension` which automatically corrects the `ClassName` to `SVGImage` after the file is written.
 
 This happens transparently - no configuration needed.
 
@@ -28,7 +32,7 @@ This happens transparently - no configuration needed.
 
 Unlike raster images, SVG manipulation preserves the vector format by modifying viewBox and width/height attributes. The module uses [contao/imagine-svg](https://github.com/contao/imagine-svg) for manipulation.
 
-Supported operations:
+**Core operations** (always available):
 - `Fit($width, $height)` - Resize to fit within bounds, maintaining aspect ratio
 - `FitMax($width, $height)` - Same as Fit, but only if image is larger
 - `Fill($width, $height)` - Crop and resize to fill exact dimensions
@@ -38,7 +42,6 @@ Supported operations:
 - `ScaleHeight($height)` - Scale to specific height, maintaining aspect ratio
 - `ScaleMaxWidth($width)` - Scale to max width, only if larger
 - `ScaleMaxHeight($height)` - Scale to max height, only if larger
-- `CropRegion($x, $y, $width, $height)` - Crop to specific region
 - `Resampled()` - Returns the SVG unchanged (for compatibility with Image templates)
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
@@ -49,6 +52,28 @@ To disable manipulation and return original SVGs unchanged (legacy behavior):
 Restruct\Silverstripe\SVG\SVGImage:
   enable_svg_manipulation: false
 ```
+
+### Optional Extensions
+
+This module provides optional extensions that are automatically applied when their corresponding modules are installed:
+
+#### Crop Support (requires `restruct/silverstripe-focuspointcropper`)
+
+When the FocusPointCropper module is installed, these additional methods become available:
+
+- `CropRegion($x, $y, $width, $height)` - Crop to specific region
+- `CropWidth($width)` - Crop to width using CropData
+- `CropHeight($height)` - Crop to height using CropData
+- `applyCropData($cropDataJson)` - Apply CMS-defined crop data
+
+#### FocusPoint Support (requires `jonom/focuspoint`)
+
+When the FocusPoint module is installed, these additional methods become available:
+
+- `FocusFill($width, $height)` - Fill with focus-aware cropping
+- `FocusFillMax($width, $height)` - Same as FocusFill, but only if image is larger
+- `FocusCropWidth($width)` - Crop to width, centered on focus point
+- `FocusCropHeight($height)` - Crop to height, centered on focus point
 
 ### SVG Sanitization
 
@@ -98,6 +123,9 @@ Then run `dev/build`. The migration will update the `ClassName` in `File`, `File
 
 <!-- Works in mixed image/SVG contexts -->
 <img src="$Image.Resampled.URL" />
+
+<!-- FocusPoint methods (when jonom/focuspoint is installed) -->
+<img src="$Image.FocusFill(400, 300).URL" />
 ```
 
 ### Inline SVG
@@ -153,11 +181,16 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 ### SVG vs PNG Comparison Tool
 
-A visual comparison tool is available at `/dev/svg-compare` to verify that SVG manipulations behave consistently with PNG manipulations. The tool:
+A visual comparison tool is available at `/dev/svg-compare` to verify that SVG manipulations behave consistently with PNG manipulations.
 
-- Compares all manipulation methods (Fit, Fill, Pad, Scale, etc.) side-by-side
+![SVG vs PNG Comparison Tool](docs/svg-compare-test.png)
+
+The tool:
+- Compares all manipulation methods (Fit, Fill, Pad, Scale, etc.) side-by-side for SVG and PNG
 - Tests both published and draft/protected assets
+- Shows FocusPoint methods when `jonom/focuspoint` is installed
 - Includes bundled test images or accepts custom image IDs
+- Displays badges and legends explaining each manipulation type
 
 ### Clear SVG Variants Task
 
@@ -175,14 +208,3 @@ vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1 verbose=1
 ```
 
 Variants will be regenerated on next request using the current manipulation settings.
-
-## Requirements
-
-- SilverStripe 4.x or 5.x
-- PHP 7.4+
-- contao/imagine-svg ^1.0
-- enshrined/svg-sanitize ^0.20
-
-### Optional
-
-- `ext-gd` - Required for generating PNG test images in `/dev/svg-compare`

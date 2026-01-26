@@ -39,6 +39,10 @@
         tr.chained td:first-child {
             border-left: 3px solid #6f42c1;
         }
+        /* FocusPoint row indicator */
+        tr.focuspoint-row td:first-child {
+            border-left: 3px solid #ffc107;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -59,7 +63,7 @@
             <div class="mt-4">
                 <p><strong>Option 1:</strong> Install bundled test images</p>
                 <p class="small text-muted mb-3">
-                    Creates 4 test files in <code>assets/svg-compare-test/</code><br>
+                    Creates 4 test files in <code>assets/$TestFolder/</code><br>
                     (2 published + 2 draft for testing protected assets)
                 </p>
                 <a href="$InstallURL" class="btn btn-success" onclick="return confirm('Install test images to the database?');">
@@ -209,10 +213,13 @@
                 </thead>
                 <tbody>
                     <% loop $Comparisons %>
-                    <tr<% if $IsChained %> class="chained"<% end_if %>>
+                    <tr class="<% if $IsChained %>chained<% end_if %><% if $UsesFocusPoint %> focuspoint-row<% end_if %>">
                         <td class="font-monospace small bg-light">
                             $Label
-                            <% if $IsChained %><br><span class="badge bg-secondary">chained</span><% end_if %>
+                            <div class="mt-1">
+                                <% if $IsChained %><span class="badge bg-secondary">chained</span><% end_if %>
+                                <% if $UsesFocusPoint %><span class="badge bg-warning text-dark">focuspoint</span><% end_if %>
+                            </div>
                         </td>
                         <% if $Error %>
                             <td colspan="2" class="text-danger small bg-danger-subtle">Error: $Error</td>
@@ -262,10 +269,13 @@
                     </thead>
                     <tbody>
                         <% loop $DraftComparisons %>
-                        <tr<% if $IsChained %> class="chained"<% end_if %>>
+                        <tr class="<% if $IsChained %>chained<% end_if %><% if $UsesFocusPoint %> focuspoint-row<% end_if %>">
                             <td class="font-monospace small bg-light">
                                 $Label
-                                <% if $IsChained %><br><span class="badge bg-secondary">chained</span><% end_if %>
+                                <div class="mt-1">
+                                    <% if $IsChained %><span class="badge bg-secondary">chained</span><% end_if %>
+                                    <% if $UsesFocusPoint %><span class="badge bg-warning text-dark">focuspoint</span><% end_if %>
+                                </div>
                             </td>
                             <% if $Error %>
                                 <td colspan="2" class="text-danger small bg-danger-subtle">Error: $Error</td>
@@ -301,6 +311,38 @@
         </div>
     <% end_if %>
 </div>
+
+    <div class="alert alert-info mt-4">
+        <strong>Legend:</strong>
+        <span class="badge bg-secondary ms-2">chained</span> = Multiple manipulations chained together
+        <% if $HasFocusPointModule %>
+        <span class="badge bg-warning text-dark ms-2">focuspoint</span> = Crops around focus point (vs center)
+        <% end_if %>
+        <br class="mt-2">
+        <span class="d-inline-block mt-1" style="border-left: 3px solid #6f42c1; padding-left: 8px;">Purple left border</span> = Chained method
+        <% if $HasFocusPointModule %>
+        <span class="d-inline-block mt-1 ms-3" style="border-left: 3px solid #ffc107; padding-left: 8px;">Yellow left border</span> = FocusPoint method
+        <% end_if %>
+        <% if not $HasFocusPointModule %>
+        <br class="mt-2">
+        <strong class="text-warning">Note:</strong> FocusPoint module (<code>jonom/focuspoint</code>) is not installed. FocusFill and FocusCropWidth/Height methods are not shown.
+        <% end_if %>
+    </div>
+
+    <% if $UsingTestImages %>
+    <div class="alert alert-secondary mt-3">
+        <strong>Test Image Guide:</strong>
+        <ul class="mb-0 mt-2">
+            <li><strong>Red circle</strong> is left of center - may be cropped in narrow FocusFill</li>
+            <li><strong>Green rectangle</strong> is the main central element</li>
+            <li><strong>Orange triangle</strong> is near the FocusPoint - should stay visible in FocusFill crops</li>
+            <% if $HasFocusPointModule %>
+            <li><strong>White crosshair</strong> marks the FocusPoint (X: 0.8, Y: 0.73) - bottom right of triangle</li>
+            <li>Compare <code>Fill()</code> vs <code>FocusFill()</code>: Fill crops from center, FocusFill keeps the crosshair/triangle visible</li>
+            <% end_if %>
+        </ul>
+    </div>
+    <% end_if %>
 
 <% end_if %>
 

@@ -358,6 +358,11 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Fill to requested dimensions without upscaling.
+     *
+     * If filling to the target size would require upscaling, the dimensions
+     * are capped proportionally to the largest size that doesn't upscale.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -372,23 +377,35 @@ trait SVGManipulationTrait
             return $this;
         }
 
+        $width = (int)$width;
+        $height = (int)$height;
         $currentWidth = $this->getWidth();
         $currentHeight = $this->getHeight();
 
-        if ($currentWidth <= $width && $currentHeight <= $height) {
+        if ($currentWidth <= 0 || $currentHeight <= 0 || $width <= 0 || $height <= 0) {
+            return $this;
+        }
+
+        // Calculate the ratio needed to fill. If < 1, we'd need to upscale.
+        // Fill crops to target aspect ratio, then scales to target size.
+        // The crop region is limited by the smaller dimension (relative to target aspect).
+        $widthRatio = $currentWidth / $width;
+        $heightRatio = $currentHeight / $height;
+        $ratio = min($widthRatio, $heightRatio);
+
+        if ($ratio < 1) {
+            // Would need to upscale - cap dimensions proportionally
+            $width = (int)round($width * $ratio);
+            $height = (int)round($height * $ratio);
+        }
+
+        if ($width <= 0 || $height <= 0) {
             return $this;
         }
 
         return $this->Fill($width, $height);
     }
 
-    /**
-     * @param int $width
-     * @param int $height
-     * @param string $backgroundColor
-     * @param int $transparencyPercent
-     * @return AssetContainer|null
-     */
     /**
      * Pad to the given dimensions with transparent padding.
      *
