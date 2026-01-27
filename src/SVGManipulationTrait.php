@@ -360,8 +360,9 @@ trait SVGManipulationTrait
     /**
      * Fill to requested dimensions without upscaling.
      *
-     * If filling to the target size would require upscaling, the dimensions
-     * are capped proportionally to the largest size that doesn't upscale.
+     * Crops to the target aspect ratio first, then only scales down if
+     * the cropped result is larger than the target dimensions.
+     * Matches the behavior of SilverStripe's core ImageManipulation::FillMax().
      *
      * @param int $width
      * @param int $height
@@ -386,24 +387,36 @@ trait SVGManipulationTrait
             return $this;
         }
 
-        // Calculate the ratio needed to fill. If < 1, we'd need to upscale.
-        // Fill crops to target aspect ratio, then scales to target size.
-        // The crop region is limited by the smaller dimension (relative to target aspect).
-        $widthRatio = $currentWidth / $width;
-        $heightRatio = $currentHeight / $height;
-        $ratio = min($widthRatio, $heightRatio);
-
-        if ($ratio < 1) {
-            // Would need to upscale - cap dimensions proportionally
-            $width = (int)round($width * $ratio);
-            $height = (int)round($height * $ratio);
-        }
-
-        if ($width <= 0 || $height <= 0) {
+        // Already at target dimensions
+        if ($currentWidth === $width && $currentHeight === $height) {
             return $this;
         }
 
-        return $this->Fill($width, $height);
+        // Compare current and target aspect ratios (matching core SS logic)
+        $imageRatio = $currentWidth / $currentHeight;
+        $cropRatio = $width / $height;
+
+        if ($cropRatio < $imageRatio && $currentHeight < $height) {
+            // Target is narrower than current, and current height is smaller than target
+            // Crop off sides, keep current height (don't upscale height)
+            $fillWidth = (int)round($currentHeight * $cropRatio);
+            $fillHeight = $currentHeight;
+        } elseif ($currentWidth < $width) {
+            // Current width is smaller than target
+            // Crop off top/bottom, keep current width (don't upscale width)
+            $fillWidth = $currentWidth;
+            $fillHeight = (int)round($currentWidth / $cropRatio);
+        } else {
+            // Both dimensions are larger than target, crop to exact target size
+            $fillWidth = $width;
+            $fillHeight = $height;
+        }
+
+        if ($fillWidth <= 0 || $fillHeight <= 0) {
+            return $this;
+        }
+
+        return $this->Fill($fillWidth, $fillHeight);
     }
 
     /**
