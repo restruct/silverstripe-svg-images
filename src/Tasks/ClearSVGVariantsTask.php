@@ -3,7 +3,10 @@
 namespace Restruct\Silverstripe\SVG\Tasks;
 
 use Restruct\Silverstripe\SVG\SVGImage;
+use League\Flysystem\Filesystem;
+use SilverStripe\Assets\FilenameParsing\ParsedFileID;
 use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
+use SilverStripe\Assets\Storage\FileHashingService;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\BuildTask;
@@ -125,7 +128,13 @@ class ClearSVGVariantsTask extends BuildTask
     }
 
     /**
-     * Delete all variants for a specific file.
+     * Delete all variants for a specific file - and only the variants.
+     *
+     * Each variant file is deleted individually from the filesystem that holds it.
+     * AssetStore::delete() is NOT usable here: its signature is delete($filename, $hash), it takes
+     * no variant, and it removes the original together with every variant. (Up to 1.4.x/2.1.x
+     * this method called delete($filename, $hash, $variant); the variant argument was silently
+     * dropped, so clearing a draft SVG's variants deleted the SVG itself.)
      *
      * @param AssetStore $store
      * @param string $filename
@@ -146,18 +155,19 @@ class ClearSVGVariantsTask extends BuildTask
         $found = 0;
         $deleted = 0;
 
-        // Use FlysystemAssetStore's variant listing if available
+        // Variant lookup needs the Flysystem store's resolution strategies
         if ($store instanceof FlysystemAssetStore) {
-            // Get all variants for this file
-            $variants = $this->getVariantsForFile($store, $filename, $hash);
+            $hasher = Injector::inst()->get(FileHashingService::class);
 
-            foreach ($variants as $variant) {
+            foreach ($this->getVariantsForFile($store, $filename, $hash) as [$filesystem, $parsedFileID]) {
                 $found++;
-                $message = "{$filename} - variant: {$variant}";
+                $message = "{$filename} - variant: {$parsedFileID->getVariant()}";
 
                 if ($confirm) {
-                    // Delete the variant
-                    $store->delete($filename, $hash, $variant);
+                    // Delete the variant file only, as core's own deleteFromFileStore() does per
+                    // file, including dropping its cached hash
+                    $filesystem->delete($parsedFileID->getFileID());
+                    $hasher->invalidate($parsedFileID->getFileID(), $filesystem);
                     $deleted++;
                     if ($verbose) {
                         $writeln("{$message} - <info>DELETED</info>");
@@ -177,143 +187,37 @@ class ClearSVGVariantsTask extends BuildTask
     }
 
     /**
-     * Get all variant names for a file.
+     * Find every variant of a file, in both the public and the protected store.
+     *
+     * Uses each store's own resolution strategy (FileResolutionStrategy::findVariants()), so it
+     * follows however the project lays files out. The previous implementation guessed the layout
+     * as `folder/hashprefix/basename__variant.ext`, which is only the protected (legacy-hash)
+     * layout: variants of published files, at natural paths, were never found, and when listing
+     * failed it fell back to probing a fixed list of common variant names.
      *
      * @param FlysystemAssetStore $store
      * @param string $filename
      * @param string $hash
-     * @return array<string>
+     * @return array<array{0: Filesystem, 1: ParsedFileID}>
      */
-    protected function getVariantsForFile(
-        FlysystemAssetStore $store,
-        string $filename,
-        string $hash
-    ): array {
-        $variants = [];
-
-        // Get the filesystem and list files in the hash directory
-        try {
-            // Use reflection to access the protected method for getting filesystem
-            $reflection = new \ReflectionClass($store);
-
-            // Try to get the public filesystem
-            if ($reflection->hasMethod('getPublicFilesystem')) {
-                $method = $reflection->getMethod('getPublicFilesystem');
-                $method->setAccessible(true);
-                $publicFs = $method->invoke($store);
-
-                $variants = array_merge($variants, $this->findVariantsInFilesystem($publicFs, $filename, $hash));
-            }
-
-            // Try to get the protected filesystem
-            if ($reflection->hasMethod('getProtectedFilesystem')) {
-                $method = $reflection->getMethod('getProtectedFilesystem');
-                $method->setAccessible(true);
-                $protectedFs = $method->invoke($store);
-
-                $variants = array_merge($variants, $this->findVariantsInFilesystem($protectedFs, $filename, $hash));
-            }
-        } catch (\Exception $e) {
-            // Fall back to checking common variant names
-            $variants = $this->getCommonVariantNames($store, $filename, $hash);
-        }
-
-        return array_unique($variants);
-    }
-
-    /**
-     * Find variants in a filesystem.
-     *
-     * @param \League\Flysystem\FilesystemOperator $filesystem
-     * @param string $filename
-     * @param string $hash
-     * @return array<string>
-     */
-    protected function findVariantsInFilesystem($filesystem, string $filename, string $hash): array
+    protected function getVariantsForFile(FlysystemAssetStore $store, string $filename, string $hash): array
     {
+        $tuple = new ParsedFileID($filename, $hash);
+        $stores = [
+            [$store->getPublicFilesystem(), $store->getPublicResolutionStrategy()],
+            [$store->getProtectedFilesystem(), $store->getProtectedResolutionStrategy()],
+        ];
+
         $variants = [];
-
-        // Build the path to search
-        $folder = dirname($filename);
-        $basename = pathinfo($filename, PATHINFO_FILENAME);
-        $hashPrefix = substr($hash, 0, 10);
-
-        // The variant path format is: folder/hashprefix/basename__variant.ext
-        $searchPath = $folder . '/' . $hashPrefix;
-
-        try {
-            $listing = $filesystem->listContents($searchPath);
-
-            foreach ($listing as $item) {
-                if ($item instanceof \League\Flysystem\FileAttributes) {
-                    $itemPath = $item->path();
-                    $itemBasename = pathinfo($itemPath, PATHINFO_FILENAME);
-
-                    // Check if this is a variant file (contains __ in the name)
-                    if (str_contains($itemBasename, '__') && str_starts_with($itemBasename, $basename . '__')) {
-                        // Extract variant name
-                        $variantPart = substr($itemBasename, strlen($basename) + 2);
-                        if (!empty($variantPart)) {
-                            $variants[] = $variantPart;
-                        }
-                    }
+        foreach ($stores as [$filesystem, $strategy]) {
+            foreach ($strategy->findVariants($tuple, $filesystem) as $parsedFileID) {
+                // findVariants() yields the original too (empty variant); that one stays
+                if ($parsedFileID->getVariant()) {
+                    $variants[] = [$filesystem, $parsedFileID];
                 }
             }
-        } catch (\Exception $e) {
-            // Directory doesn't exist or other error - that's fine
         }
 
         return $variants;
-    }
-
-    /**
-     * Check for common variant names that might exist.
-     *
-     * @param AssetStore $store
-     * @param string $filename
-     * @param string $hash
-     * @return array<string>
-     */
-    protected function getCommonVariantNames(AssetStore $store, string $filename, string $hash): array
-    {
-        $commonVariants = [
-            // Common manipulation variants
-            'Fit100x100',
-            'Fit150x150',
-            'Fit200x200',
-            'Fit300x300',
-            'Fit352x198',
-            'Fill100x100',
-            'Fill150x150',
-            'Fill200x200',
-            'Fill300x300',
-            'ScaleWidth100',
-            'ScaleWidth150',
-            'ScaleWidth200',
-            'ScaleWidth300',
-            'ScaleHeight100',
-            'ScaleHeight150',
-            'ScaleHeight200',
-            'ScaleHeight300',
-            'Pad100x100',
-            'Pad150x150',
-            'Pad200x200',
-            'Pad300x300',
-            // CMS thumbnails
-            'FitMax400x300',
-            'FitMax104x104',
-            'FitMaxWzEwNCwxMDRd',
-            // Chained variants
-            'Fill100x100_ScaleWidth50',
-        ];
-
-        $foundVariants = [];
-        foreach ($commonVariants as $variant) {
-            if ($store->exists($filename, $hash, $variant)) {
-                $foundVariants[] = $variant;
-            }
-        }
-
-        return $foundVariants;
     }
 }

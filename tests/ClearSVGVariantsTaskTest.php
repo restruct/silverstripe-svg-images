@@ -81,4 +81,45 @@ class ClearSVGVariantsTaskTest extends SapphireTest
         );
         $this->assertStringContainsString('<svg', (string)SVGImage::get()->byID($svg->ID)->getString());
     }
+
+    /**
+     * Regression: variants of PUBLISHED files were never found. The finder assumed the
+     * protected-store layout (folder/hashprefix/name__variant.ext); published files live at
+     * natural paths, so the task reported 0 and cleared nothing for them.
+     */
+    public function testDryRunReportsVariantsWithoutDeletingThem(): void
+    {
+        $svg = $this->makeSVG();
+        $variant = $svg->ScaleWidth(100);
+        $this->assertTrue($this->store()->exists($svg->getFilename(), $svg->getHash(), $variant->getVariant()));
+
+        $result = $this->runTask(false);
+
+        $this->assertSame(1, $result['images']);
+        $this->assertGreaterThanOrEqual(1, $result['found'], implode("\n", $result['lines']));
+        $this->assertSame(0, $result['deleted']);
+        $this->assertTrue(
+            $this->store()->exists($svg->getFilename(), $svg->getHash(), $variant->getVariant()),
+            'a dry run must not delete anything'
+        );
+    }
+
+    /**
+     * Regression: the task called AssetStore::delete($filename, $hash, $variant), but delete()
+     * takes no variant argument (AssetStore::delete($filename, $hash)). The third argument was
+     * silently dropped, so "delete this variant" deleted the ORIGINAL file and every variant with
+     * it, leaving the File record pointing at nothing.
+     */
+    public function testConfirmDeletesVariantsButKeepsThePublishedOriginal(): void
+    {
+        $svg = $this->makeSVG();
+        $this->assertVariantsClearedAndOriginalKept($svg);
+    }
+
+    public function testConfirmDeletesVariantsButKeepsTheDraftOriginal(): void
+    {
+        // Unpublished files sit in the protected store, under a hash directory
+        $svg = $this->makeSVG(null, 'draft.svg', false);
+        $this->assertVariantsClearedAndOriginalKept($svg);
+    }
 }
