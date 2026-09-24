@@ -208,4 +208,96 @@ class SVGImageTest extends SapphireTest
 
         return (int)DB::get_generated_id('File');
     }
+
+    /**
+     * Regression: no upload was ever sanitized. The check ran in SVGImage::onBeforeWrite() and
+     * bailed out on !$this->exists(), and File::exists() is false for a record that is not in the
+     * database yet - which is every upload's first write. A <script> in an uploaded SVG was
+     * stored and served as-is.
+     */
+    public function testScriptIsStrippedOnUpload(): void
+    {
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10"/></svg>'
+        );
+
+        $content = $svg->getString();
+        $this->assertStringNotContainsString('<script', $content);
+        $this->assertStringContainsString('<rect', $content);
+    }
+
+    public function testSanitizeOnUploadCanBeSwitchedOff(): void
+    {
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>'
+        );
+
+        $this->assertStringContainsString('<script', $svg->getString());
+    }
+
+    public function testRemoteReferencesAreRemovedByDefault(): void
+    {
+        $svg = $this->makeSVG($this->svgWithRemoteImage());
+
+        $this->assertStringNotContainsString('https://example.com/pixel.png', $svg->getString());
+    }
+
+    public function testRemoteReferenceRemovalCanBeSwitchedOff(): void
+    {
+        Config::modify()->set(SVGImage::class, 'sanitize_remove_remote_references', false);
+
+        $svg = $this->makeSVG($this->svgWithRemoteImage());
+
+        $this->assertStringContainsString('https://example.com/pixel.png', $svg->getString());
+    }
+
+    /**
+     * Regression, same defect by the other route: an SVG uploaded through a `has_one Image`
+     * relation is written as a plain Image, so SVGImage's onBeforeWrite() never ran for it at all.
+     */
+    public function testScriptIsStrippedWhenUploadedAsAPlainImage(): void
+    {
+        $image = Image::create();
+        $image->setFromString(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'svgtest/relation-upload.svg'
+        );
+        $image->write();
+
+        $this->assertStringNotContainsString('<script', File::get()->byID($image->ID)->getString());
+    }
+
+    public function testReplacedFileIsSanitizedToo(): void
+    {
+        // "Replace file" in the CMS keeps the record and brings new content
+        $svg = $this->makeSVG();
+        $svg->setFromString(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            $svg->getFilename()
+        );
+        $svg->write();
+
+        $this->assertStringNotContainsString('<script', SVGImage::get()->byID($svg->ID)->getString());
+    }
+
+    public function testUnsanitizedCopyIsNotLeftInTheAssetStore(): void
+    {
+        $dirty = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>';
+        $dirtyHash = sha1($dirty);
+
+        $svg = SVGImage::create();
+        $svg->setFromString($dirty, 'svgtest/dirty.svg');
+        $this->assertSame($dirtyHash, $svg->getHash(), 'premise: the store hashes content with sha1');
+        $svg->write();
+
+        $store = Injector::inst()->get(AssetStore::class);
+        $this->assertNotSame($dirtyHash, $svg->getHash());
+        $this->assertTrue($store->exists($svg->getFilename(), $svg->getHash()));
+        $this->assertFalse(
+            $store->exists('svgtest/dirty.svg', $dirtyHash),
+            'the unsanitized upload must not stay retrievable from the store'
+        );
+    }
 }

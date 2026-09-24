@@ -5,8 +5,11 @@ namespace Restruct\Silverstripe\SVG;
 use DOMDocument;
 use enshrined\svgSanitize\Sanitizer;
 use Override;
+use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
+use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Assets\Storage\DBFile;
+use SilverStripe\Core\Injector\Injector;
 use SilverStripe\ORM\DB;
 use SilverStripe\ORM\FieldType\DBField;
 
@@ -82,12 +85,18 @@ class SVGImage extends Image
     #[Override]
     public function onBeforeWrite(): void
     {
+        // Sanitization on upload happens in SVGImageExtension::onBeforeWrite(), which parent::
+        // onBeforeWrite() invokes. It lives on the extension because SVGs uploaded through a
+        // `has_one Image` relation are written as a plain Image, where an SVGImage override never
+        // runs. The check that used to be here could never fire anyway: it required
+        // $this->exists(), which is false for any record not yet in the database - i.e. exactly
+        // the first write it was meant for - so no upload was ever sanitized.
+        //
+        // // Only sanitize on first write (new upload) and if enabled
+        // if (!$this->isInDB() && $this->IsSVG() && static::config()->get('sanitize_on_upload')) {
+        //     $this->sanitizeSVG();
+        // }
         parent::onBeforeWrite();
-
-        // Only sanitize on first write (new upload) and if enabled
-        if (!$this->isInDB() && $this->IsSVG() && static::config()->get('sanitize_on_upload')) {
-            $this->sanitizeSVG();
-        }
     }
 
     /**
@@ -97,17 +106,36 @@ class SVGImage extends Image
      */
     public function sanitizeSVG(): bool
     {
-        if (!$this->IsSVG() || !$this->exists()) {
+        return static::sanitize_file($this);
+    }
+
+    /**
+     * Sanitize the content of any File record holding an SVG, SVGImage or not.
+     *
+     * Reads the content through the DBFile field rather than $file->exists(): File::exists()
+     * also requires the record to be in the database, so it is false during the first write -
+     * the upload itself.
+     *
+     * When the content changes, the cleaned content replaces it under the same filename, and the
+     * unsanitized copy is removed from the asset store unless some record still references that
+     * exact file (it cannot on a fresh upload, which is the case this exists for).
+     *
+     * @param File $file
+     * @return bool True if the content was run through the sanitizer
+     */
+    public static function sanitize_file(File $file): bool
+    {
+        if ($file->getExtension() !== 'svg' || !$file->File->exists()) {
             return false;
         }
 
-        $content = $this->getString();
+        $content = $file->File->getString();
         if (empty($content)) {
             return false;
         }
 
         $sanitizer = new Sanitizer();
-        $sanitizer->removeRemoteReferences(static::config()->get('sanitize_remove_remote_references'));
+        $sanitizer->removeRemoteReferences((bool)static::config()->get('sanitize_remove_remote_references'));
 
         $cleanContent = $sanitizer->sanitize($content);
 
@@ -118,10 +146,38 @@ class SVGImage extends Image
 
         // Only update if content changed
         if ($cleanContent !== $content) {
-            $this->setFromString($cleanContent, $this->getFilename());
+            $filename = $file->getFilename();
+            $dirtyHash = $file->getHash();
+
+            $file->setFromString($cleanContent, $filename);
+
+            if ($dirtyHash && $dirtyHash !== $file->getHash() && !static::tuple_is_referenced($filename, $dirtyHash)) {
+                Injector::inst()->get(AssetStore::class)->delete($filename, $dirtyHash);
+            }
         }
 
         return true;
+    }
+
+    /**
+     * Whether any File row, on any stage or in the version history, points at this exact file.
+     */
+    protected static function tuple_is_referenced(string $filename, string $hash): bool
+    {
+        foreach (['File', 'File_Live', 'File_Versions'] as $table) {
+            if (!DB::get_schema()->hasTable($table)) {
+                continue;
+            }
+            $count = DB::prepared_query(
+                "SELECT COUNT(*) FROM \"{$table}\" WHERE \"FileFilename\" = ? AND \"FileHash\" = ?",
+                [$filename, $hash]
+            )->value();
+            if ($count > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

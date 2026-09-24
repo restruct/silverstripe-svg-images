@@ -7,7 +7,10 @@ use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DB;
 
 /**
- * Extension to ensure SVG files get the correct ClassName on upload.
+ * Applied to File: sanitizes SVG uploads, and ensures SVG files get the correct ClassName.
+ *
+ * Both jobs live here rather than on SVGImage because an SVG uploaded through a relation field
+ * is written as the relation's class (usually Image), where SVGImage's own methods never run.
  *
  * When uploading SVGs through relation fields (e.g., `many_many Images => Image::class`),
  * the framework enforces the relation's class type, ignoring the `class_for_file_extension`
@@ -21,6 +24,27 @@ use SilverStripe\ORM\DB;
  */
 class SVGImageExtension extends Extension
 {
+    /**
+     * Sanitize SVG content whenever new content arrives: the first write (upload) and any write
+     * that changes the file (a replaced file keeps its record but brings new content).
+     *
+     * Controlled by SVGImage.sanitize_on_upload and SVGImage.sanitize_remove_remote_references,
+     * whatever the record's class.
+     */
+    public function onBeforeWrite(): void
+    {
+        /** @var File $owner */
+        $owner = $this->getOwner();
+
+        if ($owner->getExtension() !== 'svg' || !SVGImage::config()->get('sanitize_on_upload')) {
+            return;
+        }
+
+        if (!$owner->isInDB() || $owner->isChanged('FileHash')) {
+            SVGImage::sanitize_file($owner);
+        }
+    }
+
     /**
      * After writing a file, ensure SVGs have the correct ClassName.
      *
