@@ -72,6 +72,9 @@ jobs:
         # The module is pulled in through a PATH repository pointing at the checkout, symlinked
         # rather than mirrored ON PURPOSE: /tests is export-ignore in .gitattributes, so a mirrored
         # (dist-style) install would contain no tests and the suite would silently pass empty.
+        #
+        # jonom/focuspoint is a suggested dependency, installed here so SVGFocusPointExtensionTest
+        # runs instead of skipping (failOnSkipped below turns a skip into a failure).
         run: |
           mkdir -p app-host
           cd app-host
@@ -81,7 +84,8 @@ jobs:
             "require": {
               "silverstripe/recipe-cms": "${{ matrix.recipe }}",
               "silverstripe/recipe-testing": "${{ matrix.testing }}",
-              "restruct/silverstripe-svg-images": "*"
+              "restruct/silverstripe-svg-images": "*",
+              "jonom/focuspoint": "*"
             },
             "repositories": [
               { "type": "path", "url": "../module", "options": { "symlink": true } }
@@ -110,9 +114,11 @@ jobs:
           <?xml version="1.0" encoding="UTF-8"?>
           <!-- Warning-to-error escalation is the RUNNER's behaviour and differs by PHPUnit
                major: 9 (SS5) converts warnings by default, 11 (SS6) has no such attribute.
-               failOnWarning is pinned so a warning behaves identically on every leg. -->
+               failOnWarning is pinned so a warning behaves identically on every leg.
+               failOnSkipped: a skipped test here means a suggested dependency failed to
+               install, which would silently shrink the suite on one leg. -->
           <phpunit bootstrap="vendor/silverstripe/framework/tests/bootstrap.php" colors="true"
-                   failOnWarning="true">
+                   failOnWarning="true" failOnSkipped="true">
               <testsuites>
                   <testsuite name="svgimages">
                       <directory>vendor/restruct/silverstripe-svg-images/tests</directory>
