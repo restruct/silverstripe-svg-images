@@ -166,17 +166,22 @@ jobs:
           SS_DATABASE_PASSWORD: root
           SS_DATABASE_NAME: ss_ci
           SS_ENVIRONMENT_TYPE: dev
-          # PHPUnit 11 (SS6) ignores a `flush=1` argument, so the manifest is flushed through
-          # this instead. Harmless on PHPUnit 9.
-          SS_PHPUNIT_FLUSH: 1
+        # How the test manifest is flushed differs per major, and each way is inert on the other:
+        # - framework 5 reads only a `flush=1` argument, and only PATH-FIRST
+        #   (`phpunit <path> flush=1`). `--testsuite <name> flush=1` cannot carry it: PHPUnit
+        #   takes `flush=1` as the test path. SS_PHPUNIT_FLUSH is never read on framework 5.
+        # - framework 6 flushes on SS_PHPUNIT_FLUSH=1; PHPUnit 11 does not pass a `flush=1`
+        #   argument through to it.
+        # So every SS5 run is path-first with flush=1, and every SS6 run sets SS_PHPUNIT_FLUSH,
+        # for both suites (each phpunit call is its own process with its own manifest boot).
         run: |
-          # SS5/PHPUnit 9 needs a path-first flush=1 as well; SS_PHPUNIT_FLUSH covers SS6
           if [ "${{ matrix.silverstripe }}" = "5" ]; then
             vendor/bin/phpunit vendor/restruct/silverstripe-svg-images/tests flush=1
+            vendor/bin/phpunit app/tests flush=1
           else
-            vendor/bin/phpunit --testsuite svgimages
+            SS_PHPUNIT_FLUSH=1 vendor/bin/phpunit --testsuite svgimages
+            SS_PHPUNIT_FLUSH=1 vendor/bin/phpunit --testsuite consumer
           fi
-          vendor/bin/phpunit --testsuite consumer
 
       - name: Boot the app and build the database
         # The suite proves the classes behave; this proves the module does not break a real boot
