@@ -210,7 +210,7 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 A visual comparison tool is available at `/dev/svg-compare` (in dev mode, or for users with `ADMIN` or `ALL_DEV_ADMIN` permission) to verify that SVG manipulations behave consistently with PNG manipulations.
 
-![SVG vs PNG Comparison Tool](docs/svg-compare-test.png)
+![SVG vs PNG Comparison Tool](https://raw.githubusercontent.com/restruct/silverstripe-svg-images/main/docs/svg-compare-test.png)
 
 The tool:
 - Compares all manipulation methods (Fit, Fill, Pad, Scale, etc.) side-by-side for SVG and PNG
