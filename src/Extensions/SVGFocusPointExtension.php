@@ -7,15 +7,18 @@ use Imagine\Image\ImageInterface;
 use Imagine\Image\Point;
 use Restruct\Silverstripe\SVG\SVGImage;
 use SilverStripe\Assets\Storage\AssetContainer;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 
 /**
  * Extension providing FocusPoint-aware cropping for SVG images.
  *
  * Applied to SVGImage and SVGDBFile when jonom/focuspoint is installed.
  * Provides FocusFill(), FocusFillMax(), FocusCropWidth(), and FocusCropHeight() methods.
+ *
+ * Extends Core\Extension rather than ORM\DataExtension: DataExtension is deprecated in
+ * Silverstripe 5 and removed in 6, and nothing here needs more than Extension provides.
  */
-class SVGFocusPointExtension extends DataExtension
+class SVGFocusPointExtension extends Extension
 {
     /**
      * FocusFill for SVG - crops and resizes keeping the focus point visible.

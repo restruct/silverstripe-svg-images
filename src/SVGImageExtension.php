@@ -13,6 +13,10 @@ use SilverStripe\ORM\DB;
  * the framework enforces the relation's class type, ignoring the `class_for_file_extension`
  * config. This extension corrects the ClassName after the write completes.
  *
+ * Uses onAfterWrite() with a direct DB query because the ORM enforces
+ * relation class types during write. The onBeforeWrite() approach doesn't
+ * work because the ORM overwrites the ClassName after our extension runs.
+ *
  * Backported from SS6 version (commit f6d1d91), with onAfterWrite DB fix for relation uploads.
  */
 class SVGImageExtension extends Extension

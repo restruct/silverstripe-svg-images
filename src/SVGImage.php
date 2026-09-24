@@ -8,6 +8,7 @@ use enshrined\svgSanitize\Sanitizer;
 use Imagine\Image\Box;
 use Imagine\Image\ImageInterface;
 use Imagine\Image\Point;
+use Override;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -70,6 +71,7 @@ class SVGImage extends Image
      *
      * @return string
      */
+    #[Override]
     public function getFileType(): string
     {
         if ($this->getExtension() === 'svg') {
@@ -82,6 +84,7 @@ class SVGImage extends Image
     /**
      * Sanitize SVG content on upload.
      */
+    #[Override]
     public function onBeforeWrite(): void
     {
         parent::onBeforeWrite();
@@ -129,6 +132,8 @@ class SVGImage extends Image
     /**
      * Get SVG dimensions from viewBox or width/height attributes.
      *
+     * Uses getString() to support both public and protected/draft assets.
+     *
      * @param string|int $dim "string" for "WxH" format, 0 for width, 1 for height
      * @return string|int|false
      */
@@ -145,7 +150,7 @@ class SVGImage extends Image
         }
 
         $doc = new DOMDocument();
-        @$doc->loadXML($content);
+        @$doc->loadXML($content); // Suppress warnings for malformed SVGs
 
         if (!$doc->documentElement) {
             return ($dim === "string") ? "Cannot parse SVG" : 0;
@@ -652,8 +657,10 @@ class SVGImage extends Image
     }
 
     /**
-     * Override ThumbnailURL to return the SVG URL directly.
-     * This prevents the ThumbnailGenerator from trying to manipulate SVG files.
+     * Override ThumbnailURL to return the SVG URL directly with grant access.
+     *
+     * This prevents the ThumbnailGenerator from trying to manipulate SVG files
+     * and ensures protected/draft SVG files display correctly in the CMS.
      *
      * @param int $width
      * @param int $height
@@ -698,11 +705,12 @@ class SVGImage extends Image
     }
 
     /**
-     * Return CMS preview link.
+     * Return CMS preview link. For SVGs, returns the URL directly.
      *
      * @param string|null $action
      * @return string|null
      */
+    #[Override]
     public function PreviewLink($action = null): ?string
     {
         if ($this->getExtension() === 'svg') {
@@ -722,6 +730,9 @@ class SVGImage extends Image
 
     /**
      * Migrate existing SVG files to SVGImage class on dev/build.
+     *
+     * Only runs when auto_migrate_svg_class config is set to true.
+     * Updates ClassName in File, File_Live, and File_Versions tables.
      */
     public function requireDefaultRecords(): void
     {
@@ -758,8 +769,14 @@ class SVGImage extends Image
         }
     }
 
+    // =========================================================================
+    // SVG template helpers
+    // =========================================================================
+
     /**
      * Return raw SVG content for inline embedding.
+     *
+     * Uses getString() to support both public and protected/draft assets.
      *
      * @return DBField|null
      */

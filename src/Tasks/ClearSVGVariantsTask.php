@@ -7,7 +7,6 @@ use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\BuildTask;
-use SilverStripe\ORM\DataObject;
 
 /**
  * ClearSVGVariantsTask - Removes all SVG variant files from the asset store.
@@ -17,33 +16,60 @@ use SilverStripe\ORM\DataObject;
  * - SVG manipulation settings have changed
  * - You want to regenerate all SVG variants
  *
- * Usage:
+ * Usage (Silverstripe 6):
+ *   vendor/bin/sake tasks:ClearSVGVariantsTask
+ *   vendor/bin/sake tasks:ClearSVGVariantsTask --confirm
+ *
+ * Usage (Silverstripe 5):
  *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask
  *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1
  *
- * Run without confirm=1 for a dry run that shows what would be deleted.
+ * Run without confirm for a dry run that shows what would be deleted.
+ *
+ * The entry point (run() on SS5, execute() on SS6) and getDescription() come from
+ * ClearSVGVariantsTaskEntryPoint, because BuildTask's shape differs between the two majors
+ * in ways one class body cannot satisfy - see that file for why it is done this way.
  */
 class ClearSVGVariantsTask extends BuildTask
 {
-    private static $segment = 'ClearSVGVariantsTask';
-
-    protected $title = 'Clear SVG Variants';
-
-    protected $description = 'Removes all SVG variant files from the asset store. Run with confirm=1 to actually delete.';
+    use ClearSVGVariantsTaskEntryPoint;
 
     /**
-     * @param \SilverStripe\Control\HTTPRequest $request
-     * @return void
+     * Silverstripe 5 URL segment (dev/tasks/ClearSVGVariantsTask). Inert config on Silverstripe 6,
+     * where the trait's $commandName names the task instead.
+     *
+     * @config
      */
-    public function run($request): void
+    private static $segment = 'ClearSVGVariantsTask';
+
+    /**
+     * Silverstripe 6 command name (sake tasks:ClearSVGVariantsTask). Declared here, not in the
+     * trait: SS5's BuildTask has no such property, so this is a new static there, and on SS6 it
+     * is a compatible redeclaration of PolyCommand::$commandName (same type, same staticness).
+     */
+    protected static string $commandName = 'ClearSVGVariantsTask';
+
+    public function __construct()
     {
-        $confirm = $request->getVar('confirm') === '1';
-        $verbose = $request->getVar('verbose') === '1';
+        parent::__construct();
+        // Assigned rather than declared: BuildTask::$title is untyped on SS5 and `string` on SS6,
+        // and no single redeclaration is compatible with both.
+        $this->title = 'Clear SVG Variants';
+    }
 
-        echo "<h2>Clear SVG Variants Task</h2>\n";
-
+    /**
+     * Version-neutral body of the task.
+     *
+     * @param bool $confirm Actually delete (false = dry run)
+     * @param bool $verbose Report every variant
+     * @param callable $writeln function (string $line): void - lines may carry <info>/<comment> tags
+     * @return array{images: int, found: int, deleted: int}
+     */
+    public function clearVariants(bool $confirm, bool $verbose, callable $writeln): array
+    {
         if (!$confirm) {
-            echo "<p><strong>DRY RUN</strong> - Add <code>confirm=1</code> to actually delete variants.</p>\n";
+            $writeln('<comment>DRY RUN - Add ' . $this->confirmHint() . ' to actually delete variants.</comment>');
+            $writeln('');
         }
 
         /** @var AssetStore $store */
@@ -55,20 +81,18 @@ class ClearSVGVariantsTask extends BuildTask
         $totalVariantsDeleted = 0;
         $totalVariantsFound = 0;
 
-        echo "<p>Found {$totalImages} SVG images in the database.</p>\n";
+        $writeln("Found {$totalImages} SVG images in the database.");
 
         if ($totalImages === 0) {
-            echo "<p>No SVG images to process.</p>\n";
-            return;
+            $writeln('No SVG images to process.');
+            return ['images' => 0, 'found' => 0, 'deleted' => 0];
         }
-
-        echo "<ul>\n";
 
         /** @var SVGImage $image */
         foreach ($svgImages as $image) {
             if (!$image->exists()) {
                 if ($verbose) {
-                    echo "<li><em>{$image->Name}</em> - File does not exist, skipping</li>\n";
+                    $writeln("<comment>{$image->Name}</comment> - File does not exist, skipping");
                 }
                 continue;
             }
@@ -81,22 +105,23 @@ class ClearSVGVariantsTask extends BuildTask
             }
 
             // Find and delete variants for this file
-            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose);
+            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose, $writeln);
             $totalVariantsFound += $variantsDeleted['found'];
             $totalVariantsDeleted += $variantsDeleted['deleted'];
         }
 
-        echo "</ul>\n";
-
-        echo "<h3>Summary</h3>\n";
-        echo "<p>Total SVG variant files found: <strong>{$totalVariantsFound}</strong></p>\n";
+        $writeln('');
+        $writeln('<info>Summary</info>');
+        $writeln("Total SVG variant files found: <comment>{$totalVariantsFound}</comment>");
 
         if ($confirm) {
-            echo "<p>Total SVG variant files deleted: <strong>{$totalVariantsDeleted}</strong></p>\n";
-            echo "<p>Variants will be regenerated on next request with the new manipulation code.</p>\n";
+            $writeln("Total SVG variant files deleted: <comment>{$totalVariantsDeleted}</comment>");
+            $writeln('Variants will be regenerated on next request with the new manipulation code.');
         } else {
-            echo "<p>Run with <code>confirm=1</code> to delete these variants.</p>\n";
+            $writeln('Run with <comment>' . $this->confirmHint() . '</comment> to delete these variants.');
         }
+
+        return ['images' => $totalImages, 'found' => $totalVariantsFound, 'deleted' => $totalVariantsDeleted];
     }
 
     /**
@@ -107,6 +132,7 @@ class ClearSVGVariantsTask extends BuildTask
      * @param string $hash
      * @param bool $confirm
      * @param bool $verbose
+     * @param callable $writeln
      * @return array{found: int, deleted: int}
      */
     protected function deleteVariantsForFile(
@@ -114,7 +140,8 @@ class ClearSVGVariantsTask extends BuildTask
         string $filename,
         string $hash,
         bool $confirm,
-        bool $verbose
+        bool $verbose,
+        callable $writeln
     ): array {
         $found = 0;
         $deleted = 0;
@@ -126,25 +153,19 @@ class ClearSVGVariantsTask extends BuildTask
 
             foreach ($variants as $variant) {
                 $found++;
-                if ($verbose) {
-                    echo "<li>{$filename} - variant: <code>{$variant}</code>";
-                }
+                $message = "{$filename} - variant: {$variant}";
 
                 if ($confirm) {
                     // Delete the variant
                     $store->delete($filename, $hash, $variant);
                     $deleted++;
                     if ($verbose) {
-                        echo " - <span style=\"color:green\">DELETED</span>";
+                        $writeln("{$message} - <info>DELETED</info>");
                     }
                 } else {
                     if ($verbose) {
-                        echo " - would be deleted";
+                        $writeln("{$message} - would be deleted");
                     }
-                }
-
-                if ($verbose) {
-                    echo "</li>\n";
                 }
             }
         }

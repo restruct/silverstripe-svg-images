@@ -8,8 +8,9 @@ use SilverStripe\Assets\Folder;
 use SilverStripe\Assets\Image;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\HTTPRequest;
-use SilverStripe\View\ArrayData;
-use SilverStripe\ORM\ArrayList;
+// ArrayData/ArrayList are NOT imported: they moved namespace in Silverstripe 6
+// (View\ArrayData -> Model\ArrayData, ORM\ArrayList -> Model\List\ArrayList) with no alias left
+// behind, so the class names are resolved per major - see arrayDataClass()/arrayListClass().
 
 /**
  * Development controller to compare SVG vs raster image manipulations.
@@ -130,7 +131,7 @@ class SVGCompareController extends Controller
         $manipulations = $this->getManipulations();
 
         // Generate comparison data for published images
-        $comparisons = ArrayList::create();
+        $comparisons = static::arrayListClass()::create();
         foreach ($manipulations as $manipulation) {
             $comparison = $this->generateComparison($svgImage, $pngImage, $manipulation);
             if ($comparison) {
@@ -144,7 +145,7 @@ class SVGCompareController extends Controller
         $hasDraftImages = $draftSvg && $draftPng && $usingTestImages;
 
         // Generate comparison data for draft images
-        $draftComparisons = ArrayList::create();
+        $draftComparisons = static::arrayListClass()::create();
         if ($hasDraftImages) {
             foreach ($manipulations as $manipulation) {
                 $comparison = $this->generateComparison($draftSvg, $draftPng, $manipulation);
@@ -495,7 +496,7 @@ SVG;
     /**
      * Generate comparison data for a manipulation.
      */
-    protected function generateComparison($svgImage, $pngImage, array $manipulation): ?ArrayData
+    protected function generateComparison($svgImage, $pngImage, array $manipulation): ?object
     {
         $label = $manipulation['label'];
 
@@ -506,7 +507,7 @@ SVG;
             $pngResult = $this->applyManipulation($pngImage, $manipulation);
             $pngData = $pngResult ? $this->getImageData($pngResult) : null;
 
-            return ArrayData::create([
+            return static::arrayDataClass()::create([
                 'Label' => $label,
                 'SVG' => $svgData,
                 'PNG' => $pngData,
@@ -514,7 +515,7 @@ SVG;
                 'UsesFocusPoint' => ($manipulation['optional'] ?? null) === 'focuspoint',
             ]);
         } catch (\Exception $e) {
-            return ArrayData::create([
+            return static::arrayDataClass()::create([
                 'Label' => $label,
                 'Error' => $e->getMessage(),
             ]);
@@ -543,14 +544,14 @@ SVG;
     /**
      * Get display data for an image result.
      */
-    protected function getImageData($image): ArrayData
+    protected function getImageData($image): object
     {
         $url = $image->getURL();
         $filename = basename($url);
         $width = method_exists($image, 'getWidth') ? $image->getWidth() : 0;
         $height = method_exists($image, 'getHeight') ? $image->getHeight() : 0;
 
-        return ArrayData::create([
+        return static::arrayDataClass()::create([
             'URL' => $url,
             'Filename' => $filename,
             'Width' => $width,
@@ -558,5 +559,28 @@ SVG;
             'Dimensions' => $width && $height ? "{$width}x{$height}" : 'unknown',
             'IsSVG' => pathinfo($filename, PATHINFO_EXTENSION) === 'svg',
         ]);
+    }
+
+    /**
+     * ArrayData class for the running Silverstripe major.
+     *
+     * Silverstripe 6 moved it from SilverStripe\View to SilverStripe\Model and removed the old
+     * name outright, so importing either one breaks this controller on the other major.
+     */
+    protected static function arrayDataClass(): string
+    {
+        return class_exists('SilverStripe\\Model\\ArrayData')
+            ? 'SilverStripe\\Model\\ArrayData'
+            : 'SilverStripe\\View\\ArrayData';
+    }
+
+    /**
+     * ArrayList class for the running Silverstripe major (moved to SilverStripe\Model\List in 6).
+     */
+    protected static function arrayListClass(): string
+    {
+        return class_exists('SilverStripe\\Model\\List\\ArrayList')
+            ? 'SilverStripe\\Model\\List\\ArrayList'
+            : 'SilverStripe\\ORM\\ArrayList';
     }
 }

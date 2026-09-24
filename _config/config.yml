@@ -39,8 +39,13 @@ SilverStripe\MimeValidator\MimeUploadValidator:
     svg:
       - image/svg
 
+# /dev/svg-compare is registered with DevelopmentAdmin, whose config key and shape changed in
+# Silverstripe 6: `registered_controllers` (controller + links) became `controllers` (class +
+# description). PolyOutput exists only on SS6, so it selects the right fragment per major.
 ---
 Name: svgcompare-dev
+Except:
+  classexists: 'SilverStripe\PolyExecution\PolyOutput'
 ---
 SilverStripe\Dev\DevelopmentAdmin:
   registered_controllers:
@@ -48,3 +53,14 @@ SilverStripe\Dev\DevelopmentAdmin:
       controller: Restruct\Silverstripe\SVG\Controllers\SVGCompareController
       links:
         svg-compare: 'Compare SVG vs raster image manipulations'
+
+---
+Name: svgcompare-dev-ss6
+Only:
+  classexists: 'SilverStripe\PolyExecution\PolyOutput'
+---
+SilverStripe\Dev\DevelopmentAdmin:
+  controllers:
+    svg-compare:
+      class: Restruct\Silverstripe\SVG\Controllers\SVGCompareController
+      description: 'Compare SVG vs raster image manipulations'
