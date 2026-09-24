@@ -122,4 +122,35 @@ class ClearSVGVariantsTaskTest extends SapphireTest
         $svg = $this->makeSVG(null, 'draft.svg', false);
         $this->assertVariantsClearedAndOriginalKept($svg);
     }
+
+    /**
+     * Regression (SS6): the task declared its own `--verbose|-v` option, which Symfony's console
+     * Application already defines globally, so `sake tasks:ClearSVGVariantsTask` refused to run at
+     * all ("An option named "verbose" already exists"). Checked against sake's real definition.
+     */
+    public function testCliOptionsDoNotCollideWithSakeGlobalOptions(): void
+    {
+        $task = ClearSVGVariantsTask::create();
+
+        if (!class_exists('SilverStripe\\Cli\\Sake')) {
+            // SS5: options arrive as request vars (confirm=1), there is no console definition
+            // to collide with. Assert the premise so this branch cannot silently cover SS6.
+            $this->assertFalse(class_exists('SilverStripe\\PolyExecution\\PolyOutput'));
+            return;
+        }
+
+        $global = (new \SilverStripe\Cli\Sake())->getDefinition();
+        foreach ($task->getOptions() as $option) {
+            $this->assertFalse(
+                $global->hasOption($option->getName()),
+                "--{$option->getName()} is already a sake global option"
+            );
+            if ($option->getShortcut()) {
+                $this->assertFalse(
+                    $global->hasShortcut($option->getShortcut()),
+                    "-{$option->getShortcut()} is already a sake global shortcut"
+                );
+            }
+        }
+    }
 }

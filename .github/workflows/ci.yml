@@ -190,7 +190,8 @@ jobs:
             vendor/bin/sake dev/tasks | grep -q ClearSVGVariantsTask
           else
             vendor/bin/sake db:build --flush
-            vendor/bin/sake tasks | grep -q ClearSVGVariantsTask
+            # Runs the task (dry run) through sake itself: catches a console-definition clash
+            vendor/bin/sake tasks:ClearSVGVariantsTask -v
           fi
 
   lint:

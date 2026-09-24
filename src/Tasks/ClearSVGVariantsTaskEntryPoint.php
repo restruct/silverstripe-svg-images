@@ -60,7 +60,11 @@ if (class_exists(PolyOutput::class)) {
         {
             return [
                 new InputOption('confirm', 'c', InputOption::VALUE_NONE, 'Actually delete the variants (without this flag, only shows what would be deleted)'),
-                new InputOption('verbose', 'v', InputOption::VALUE_NONE, 'Show detailed output for each file'),
+                // No task-level --verbose|-v: the console Application already defines it globally,
+                // and redeclaring it made sake refuse the task outright ("An option named
+                // "verbose" already exists"). The global -v (CLI) / ?verbose=1 (browser, via
+                // HttpRequestInput) sets the output verbosity, read with isVerbose() below.
+                // new InputOption('verbose', 'v', InputOption::VALUE_NONE, 'Show detailed output for each file'),
             ];
         }
 
@@ -76,7 +80,7 @@ if (class_exists(PolyOutput::class)) {
         {
             $this->clearVariants(
                 (bool)$input->getOption('confirm'),
-                (bool)$input->getOption('verbose'),
+                $output->isVerbose(),
                 function (string $line) use ($output): void {
                     // PolyOutput renders the <info>/<comment> tags for both ANSI and HTML
                     $output->writeln($line);
