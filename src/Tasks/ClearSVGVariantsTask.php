@@ -39,7 +39,7 @@ class ClearSVGVariantsTask extends BuildTask
 
     /**
      * Silverstripe 5 URL segment (dev/tasks/ClearSVGVariantsTask). Inert config on Silverstripe 6,
-     * where the trait's $commandName names the task instead.
+     * where $commandName names the task instead.
      *
      * @config
      */
