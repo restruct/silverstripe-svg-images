@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.0.0 (unreleased)
+## 3.0.0 (2026-09-24)
 
 One line for Silverstripe 5 and 6 (PHP 8.1+), replacing both `1.x` (Silverstripe 4/5, branch
 `ss4/5`) and `2.x` (Silverstripe 6). It is the 1.4.1 feature set plus the Silverstripe 6 port from
