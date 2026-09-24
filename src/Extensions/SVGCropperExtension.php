@@ -2,9 +2,6 @@
 
 namespace Restruct\Silverstripe\SVG\Extensions;
 
-use Imagine\Image\Box;
-use Imagine\Image\Point;
-use Restruct\Silverstripe\SVG\SVGImage;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Core\Extension;
 
@@ -12,8 +9,9 @@ use SilverStripe\Core\Extension;
  * Extension providing crop functionality for SVG images.
  *
  * Applied to SVGImage and SVGDBFile when restruct/silverstripe-focuspointcropper is installed.
- * Provides applyCropData() and CropRegion(). (CropWidth()/CropHeight() moved to
- * SVGManipulationTrait, where they can actually override core's - see the note there.)
+ * Provides applyCropData(). (CropWidth()/CropHeight() moved to SVGManipulationTrait, where they
+ * can actually override core's - see the note there. CropRegion() moved there too, so that it is
+ * available without that module, as it was on SVGImage in 2.x.)
  *
  * Extends Core\Extension rather than ORM\DataExtension: DataExtension is deprecated in
  * Silverstripe 5 and removed in 6, and nothing here needs more than Extension provides.
@@ -45,48 +43,12 @@ class SVGCropperExtension extends Extension
         }
 
         // Use the CropRegion method
-        return $this->CropRegion(
+        # which now lives on the owner (SVGManipulationTrait), not on this extension
+        return $this->owner->CropRegion(
             (int)$cropData->originalX,
             (int)$cropData->originalY,
             (int)$cropData->originalWidth,
             (int)$cropData->originalHeight
         );
-    }
-
-    /**
-     * Crop to specific region.
-     *
-     * @param int $x X offset
-     * @param int $y Y offset
-     * @param int $width Crop width
-     * @param int $height Crop height
-     * @return AssetContainer|null
-     */
-    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
-    {
-        if (!$this->owner->IsSVG()) {
-            return null;
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this->owner;
-        }
-
-        $variant = $this->owner->variantName('CropRegion', $x, $y, $width, $height);
-
-        return $this->owner->manipulateSVG($variant, function ($image) use ($x, $y, $width, $height) {
-            return $image->crop(new Point($x, $y), new Box($width, $height));
-        }) ?: $this->owner;
-    }
-
-    /**
-     * Check if SVG manipulation is enabled.
-     *
-     * @return bool
-     */
-    protected function isSVGManipulationEnabled(): bool
-    {
-        return SVGImage::config()->get('enable_svg_manipulation')
-            && class_exists(\Contao\ImagineSvg\Imagine::class);
     }
 }

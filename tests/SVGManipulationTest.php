@@ -220,4 +220,17 @@ class SVGManipulationTest extends SapphireTest
 
         $this->assertInstanceOf(SVGDBFile::class, $this->makeSVG(null, 'crop.svg')->CropWidth(100));
     }
+
+    /**
+     * CropRegion() was a method on SVGImage in 2.x and needs nothing from any other module, so it
+     * must be available without restruct/silverstripe-focuspointcropper (which this test does not
+     * install or simulate), on the record and on a chained variant.
+     */
+    public function testCropRegionIsAvailableWithoutTheCropperModule(): void
+    {
+        $svg = $this->makeSVG();
+
+        $this->assertSame('100x50', $this->sizeOf($svg->CropRegion(10, 20, 100, 50)));
+        $this->assertSame('40x30', $this->sizeOf($svg->ScaleWidth(100)->CropRegion(0, 0, 40, 30)));
+    }
 }

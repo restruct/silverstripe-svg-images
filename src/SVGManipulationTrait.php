@@ -594,6 +594,37 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Crop to a specific region of the original, in its own coordinates.
+     *
+     * Always available, as it was on SVGImage in 2.x: it needs nothing from
+     * restruct/silverstripe-focuspointcropper. In 1.4.x it lived in SVGCropperExtension, which is
+     * applied only when that module is installed; SVGCropperExtension::applyCropData() now calls
+     * this.
+     *
+     * @param int $x X offset
+     * @param int $y Y offset
+     * @param int $width Crop width
+     * @param int $height Crop height
+     * @return AssetContainer|null
+     */
+    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
+    {
+        if (!$this->IsSVG()) {
+            return null;
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $variant = $this->variantName('CropRegion', $x, $y, $width, $height);
+
+        return $this->manipulateSVG($variant, function ($image) use ($x, $y, $width, $height) {
+            return $image->crop(new Point($x, $y), new Box($width, $height));
+        }) ?: $this;
+    }
+
+    /**
      * @return AssetContainer|null
      */
     public function CMSThumbnail()
