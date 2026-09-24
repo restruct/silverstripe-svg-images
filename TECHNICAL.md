@@ -11,7 +11,7 @@ This document explains the implementation decisions, problems encountered, and s
 | `SVGImage` | Main File subclass for SVG files. Extends `Image` to inherit all image behavior. |
 | `SVGDBFile` | DBFile subclass returned by manipulation methods. Enables chained manipulations. |
 | `SVGImageExtension` | Extension on `File` to fix ClassName for SVGs uploaded through Image relations. |
-| `SVGManipulationTrait` | Shared manipulation logic (currently unused, kept for potential future refactoring). |
+| `SVGManipulationTrait` | The one implementation of every SVG manipulation (Fit, Fill, Pad, Scale, Crop...), used by both `SVGImage` and `SVGDBFile`. Until 3.0 `SVGImage` carried its own copies, which is how the 1.4.1 FillMax fix reached chained variants but not `SVGImage` itself. |
 
 ### Design Decision: SVGs as Images
 
@@ -65,6 +65,8 @@ public function onAfterWrite(): void
     }
 }
 ```
+
+The shipped version also updates `File_Live` when `File` is versioned: a form that publishes on save writes `File_Live` from the same in-memory `Image`, so correcting only `File` left the published site serving a plain `Image`.
 
 **Why it works:** By the time `onAfterWrite()` runs, the record exists in the database. The direct DB query bypasses the ORM's class enforcement, and subsequent loads will use the correct class.
 
@@ -240,7 +242,20 @@ public function existingOnly()
 
 ---
 
-## SilverStripe 6 Compatibility
+## SVG Sanitization: where it runs
+
+Sanitization runs from `SVGImageExtension::onBeforeWrite()`, which is on `File` and therefore sees every class - including an SVG uploaded through a `has_one Image` relation, which is written as a plain `Image` first. It runs on the first write and on any write that changes `FileHash` (a replaced file). The content is read through the `DBFile` field, not `File::exists()`, which is false until the record is in the database. The cleaned file replaces the upload, and the unsanitized original is deleted from the asset store unless some `File` row (any stage or version) still references that filename and hash. The logic is `SVGImage::sanitize_file()`.
+
+Until 3.0 the check sat in `SVGImage::onBeforeWrite()` behind `!isInDB()` and then bailed out on `!exists()`, so it never ran on any upload.
+
+If the sanitizer cannot parse a file, the upload is kept as it is.
+
+## Silverstripe 5 and 6 from one codebase
+
+The module supports both majors from one line. Most differences are ones the running major cannot tell apart (a return type the SS5 parent lacks, `#[Override]` only where the parent exists in both). Two need per-major code:
+
+- **`ClearSVGVariantsTask`**: the class is declared once, and its entry point (`run()` on SS5, `execute()`/`getOptions()` on SS6) comes from a trait declared per major in `ClearSVGVariantsTaskEntryPoint.php`. Two guarded task classes would not work: `TaskRunner` reflects every `BuildTask` descendant in the manifest. On SS6 the task declares no `--verbose` option of its own, because sake defines it globally and refuses a task that redeclares it.
+- **`/dev/svg-compare`**: registered with `DevelopmentAdmin` under `registered_controllers` on SS5 and `controllers` on SS6 (`_config/config.yml`, selected by whether `PolyOutput` exists), and `ArrayData`/`ArrayList` are resolved per major because SS6 moved them without an alias. The controller guards itself in `canInit()` (dev mode, or `ADMIN` / `ALL_DEV_ADMIN`): `DevelopmentAdmin` does not check access to a registered controller.
 
 ### BuildTask Changes
 
@@ -306,6 +321,8 @@ public function Link(): string
 ---
 
 ## Testing Checklist
+
+The automated suite in `tests/` covers most of this (run it from a host project, see the README). The manual checks below are what it cannot see: the CMS upload and preview.
 
 ### Relation Upload Test
 1. Create a DataObject with `has_one Image` relation

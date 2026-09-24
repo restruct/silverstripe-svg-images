@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- For running the suite from a HOST project that requires this module through a path repository
+     (symlink: true). See README "Running the tests". failOnWarning is pinned because whether a
+     warning fails a test otherwise differs between PHPUnit 9 (SS5) and 11 (SS6). -->
+<phpunit bootstrap="vendor/silverstripe/framework/tests/bootstrap.php" colors="true"
+         failOnWarning="true">
+    <testsuites>
+        <testsuite name="svgimages">
+            <directory>vendor/restruct/silverstripe-svg-images/tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

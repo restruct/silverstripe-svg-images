@@ -1,11 +1,12 @@
 {
   "name": "restruct/silverstripe-svg-images",
-  "description": "SVG Image support for Silverstripe with real manipulation and sanitization",
+  "description": "SVG image support for Silverstripe: uploads, CMS previews, real vector manipulation (resize/crop/pad) and sanitization",
   "type": "silverstripe-vendormodule",
   "license": "MIT",
   "keywords": [
     "silverstripe",
-    "svg"
+    "svg",
+    "image"
   ],
   "homepage": "https://github.com/restruct/silverstripe-svg-images",
   "authors": [
@@ -15,17 +16,43 @@
     }
   ],
   "require": {
-    "silverstripe/assets": "^3",
+    "php": "^8.1",
+    "ext-dom": "*",
+    "silverstripe/framework": "^5 || ^6",
+    "silverstripe/assets": "^2 || ^3",
+    "silverstripe/vendor-plugin": "^2 || ^3",
     "contao/imagine-svg": "^1.0",
-    "enshrined/svg-sanitize": "^0.20",
-    "ext-dom": "*"
+    "enshrined/svg-sanitize": "^0.22 || ^1"
+  },
+  "require-dev": {
+    "silverstripe/recipe-testing": "^3 || ^4"
   },
   "suggest": {
-    "ext-gd": "Required for generating PNG test images in /dev/svg-compare"
+    "ext-gd": "Required for generating PNG test images in /dev/svg-compare",
+    "jonom/focuspoint": "Focus-point aware cropping (FocusFill etc.) for SVGs as well as raster images",
+    "restruct/silverstripe-focuspointcropper": "Manual crop regions (CropData) for SVGs as well as raster images"
   },
   "autoload": {
     "psr-4": {
       "Restruct\\Silverstripe\\SVG\\": "src/"
     }
-  }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Restruct\\Silverstripe\\SVG\\Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true,
+      "silverstripe/vendor-plugin": true,
+      "silverstripe/recipe-plugin": true
+    }
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/restruct"
+    }
+  ]
 }

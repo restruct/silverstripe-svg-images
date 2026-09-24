@@ -3,14 +3,13 @@
 namespace Restruct\Silverstripe\SVG\Tasks;
 
 use Restruct\Silverstripe\SVG\SVGImage;
+use League\Flysystem\Filesystem;
+use SilverStripe\Assets\FilenameParsing\ParsedFileID;
 use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
+use SilverStripe\Assets\Storage\FileHashingService;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\BuildTask;
-use SilverStripe\PolyExecution\PolyOutput;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 
 /**
  * ClearSVGVariantsTask - Removes all SVG variant files from the asset store.
@@ -20,36 +19,60 @@ use Symfony\Component\Console\Input\InputOption;
  * - SVG manipulation settings have changed
  * - You want to regenerate all SVG variants
  *
- * Usage:
+ * Usage (Silverstripe 6):
  *   vendor/bin/sake tasks:ClearSVGVariantsTask
  *   vendor/bin/sake tasks:ClearSVGVariantsTask --confirm
  *
- * Run without --confirm for a dry run that shows what would be deleted.
+ * Usage (Silverstripe 5):
+ *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask
+ *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1
+ *
+ * Run without confirm for a dry run that shows what would be deleted.
+ *
+ * The entry point (run() on SS5, execute() on SS6) and getDescription() come from
+ * ClearSVGVariantsTaskEntryPoint, because BuildTask's shape differs between the two majors
+ * in ways one class body cannot satisfy - see that file for why it is done this way.
  */
 class ClearSVGVariantsTask extends BuildTask
 {
+    use ClearSVGVariantsTaskEntryPoint;
+
+    /**
+     * Silverstripe 5 URL segment (dev/tasks/ClearSVGVariantsTask). Inert config on Silverstripe 6,
+     * where $commandName names the task instead.
+     *
+     * @config
+     */
+    private static $segment = 'ClearSVGVariantsTask';
+
+    /**
+     * Silverstripe 6 command name (sake tasks:ClearSVGVariantsTask). Declared here, not in the
+     * trait: SS5's BuildTask has no such property, so this is a new static there, and on SS6 it
+     * is a compatible redeclaration of PolyCommand::$commandName (same type, same staticness).
+     */
     protected static string $commandName = 'ClearSVGVariantsTask';
 
-    protected string $title = 'Clear SVG Variants';
-
-    protected static string $description = 'Removes all SVG variant files from the asset store. Run with --confirm to actually delete.';
-
-    public function getOptions(): array
+    public function __construct()
     {
-        return [
-            new InputOption('confirm', 'c', InputOption::VALUE_NONE, 'Actually delete the variants (without this flag, only shows what would be deleted)'),
-            new InputOption('verbose', 'v', InputOption::VALUE_NONE, 'Show detailed output for each file'),
-        ];
+        parent::__construct();
+        // Assigned rather than declared: BuildTask::$title is untyped on SS5 and `string` on SS6,
+        // and no single redeclaration is compatible with both.
+        $this->title = 'Clear SVG Variants';
     }
 
-    protected function execute(InputInterface $input, PolyOutput $output): int
+    /**
+     * Version-neutral body of the task.
+     *
+     * @param bool $confirm Actually delete (false = dry run)
+     * @param bool $verbose Report every variant
+     * @param callable $writeln function (string $line): void - lines may carry <info>/<comment> tags
+     * @return array{images: int, found: int, deleted: int}
+     */
+    public function clearVariants(bool $confirm, bool $verbose, callable $writeln): array
     {
-        $confirm = $input->getOption('confirm');
-        $verbose = $input->getOption('verbose');
-
         if (!$confirm) {
-            $output->writeln('<comment>DRY RUN - Add --confirm to actually delete variants.</comment>');
-            $output->writeln('');
+            $writeln('<comment>DRY RUN - Add ' . $this->confirmHint() . ' to actually delete variants.</comment>');
+            $writeln('');
         }
 
         /** @var AssetStore $store */
@@ -61,18 +84,18 @@ class ClearSVGVariantsTask extends BuildTask
         $totalVariantsDeleted = 0;
         $totalVariantsFound = 0;
 
-        $output->writeln("Found {$totalImages} SVG images in the database.");
+        $writeln("Found {$totalImages} SVG images in the database.");
 
         if ($totalImages === 0) {
-            $output->writeln('No SVG images to process.');
-            return Command::SUCCESS;
+            $writeln('No SVG images to process.');
+            return ['images' => 0, 'found' => 0, 'deleted' => 0];
         }
 
         /** @var SVGImage $image */
         foreach ($svgImages as $image) {
             if (!$image->exists()) {
                 if ($verbose) {
-                    $output->writeln("<comment>{$image->Name}</comment> - File does not exist, skipping");
+                    $writeln("<comment>{$image->Name}</comment> - File does not exist, skipping");
                 }
                 continue;
             }
@@ -85,28 +108,40 @@ class ClearSVGVariantsTask extends BuildTask
             }
 
             // Find and delete variants for this file
-            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose, $output);
+            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose, $writeln);
             $totalVariantsFound += $variantsDeleted['found'];
             $totalVariantsDeleted += $variantsDeleted['deleted'];
         }
 
-        $output->writeln('');
-        $output->writeln('<info>Summary</info>');
-        $output->writeln("Total SVG variant files found: <comment>{$totalVariantsFound}</comment>");
+        $writeln('');
+        $writeln('<info>Summary</info>');
+        $writeln("Total SVG variant files found: <comment>{$totalVariantsFound}</comment>");
 
         if ($confirm) {
-            $output->writeln("Total SVG variant files deleted: <comment>{$totalVariantsDeleted}</comment>");
-            $output->writeln('Variants will be regenerated on next request with the new manipulation code.');
+            $writeln("Total SVG variant files deleted: <comment>{$totalVariantsDeleted}</comment>");
+            $writeln('Variants will be regenerated on next request with the new manipulation code.');
         } else {
-            $output->writeln('Run with <comment>--confirm</comment> to delete these variants.');
+            $writeln('Run with <comment>' . $this->confirmHint() . '</comment> to delete these variants.');
         }
 
-        return Command::SUCCESS;
+        return ['images' => $totalImages, 'found' => $totalVariantsFound, 'deleted' => $totalVariantsDeleted];
     }
 
     /**
-     * Delete all variants for a specific file.
+     * Delete all variants for a specific file - and only the variants.
      *
+     * Each variant file is deleted individually from the filesystem that holds it.
+     * AssetStore::delete() is NOT usable here: its signature is delete($filename, $hash), it takes
+     * no variant, and it removes the original together with every variant. (Up to 1.4.x/2.1.x
+     * this method called delete($filename, $hash, $variant); the variant argument was silently
+     * dropped, so clearing a draft SVG's variants deleted the SVG itself.)
+     *
+     * @param AssetStore $store
+     * @param string $filename
+     * @param string $hash
+     * @param bool $confirm
+     * @param bool $verbose
+     * @param callable $writeln
      * @return array{found: int, deleted: int}
      */
     protected function deleteVariantsForFile(
@@ -115,30 +150,31 @@ class ClearSVGVariantsTask extends BuildTask
         string $hash,
         bool $confirm,
         bool $verbose,
-        PolyOutput $output
+        callable $writeln
     ): array {
         $found = 0;
         $deleted = 0;
 
-        // Use FlysystemAssetStore's variant listing if available
+        // Variant lookup needs the Flysystem store's resolution strategies
         if ($store instanceof FlysystemAssetStore) {
-            // Get all variants for this file
-            $variants = $this->getVariantsForFile($store, $filename, $hash);
+            $hasher = Injector::inst()->get(FileHashingService::class);
 
-            foreach ($variants as $variant) {
+            foreach ($this->getVariantsForFile($store, $filename, $hash) as [$filesystem, $parsedFileID]) {
                 $found++;
-                $message = "{$filename} - variant: {$variant}";
+                $message = "{$filename} - variant: {$parsedFileID->getVariant()}";
 
                 if ($confirm) {
-                    // Delete the variant
-                    $store->delete($filename, $hash, $variant);
+                    // Delete the variant file only, as core's own deleteFromFileStore() does per
+                    // file, including dropping its cached hash
+                    $filesystem->delete($parsedFileID->getFileID());
+                    $hasher->invalidate($parsedFileID->getFileID(), $filesystem);
                     $deleted++;
                     if ($verbose) {
-                        $output->writeln("{$message} - <info>DELETED</info>");
+                        $writeln("{$message} - <info>DELETED</info>");
                     }
                 } else {
                     if ($verbose) {
-                        $output->writeln("{$message} - would be deleted");
+                        $writeln("{$message} - would be deleted");
                     }
                 }
             }
@@ -151,134 +187,37 @@ class ClearSVGVariantsTask extends BuildTask
     }
 
     /**
-     * Get all variant names for a file.
+     * Find every variant of a file, in both the public and the protected store.
      *
-     * @return array<string>
-     */
-    protected function getVariantsForFile(
-        FlysystemAssetStore $store,
-        string $filename,
-        string $hash
-    ): array {
-        $variants = [];
-
-        // Get the filesystem and list files in the hash directory
-        try {
-            // Use reflection to access the protected method for getting filesystem
-            $reflection = new \ReflectionClass($store);
-
-            // Try to get the public filesystem
-            if ($reflection->hasMethod('getPublicFilesystem')) {
-                $method = $reflection->getMethod('getPublicFilesystem');
-                $method->setAccessible(true);
-                $publicFs = $method->invoke($store);
-
-                $variants = array_merge($variants, $this->findVariantsInFilesystem($publicFs, $filename, $hash));
-            }
-
-            // Try to get the protected filesystem
-            if ($reflection->hasMethod('getProtectedFilesystem')) {
-                $method = $reflection->getMethod('getProtectedFilesystem');
-                $method->setAccessible(true);
-                $protectedFs = $method->invoke($store);
-
-                $variants = array_merge($variants, $this->findVariantsInFilesystem($protectedFs, $filename, $hash));
-            }
-        } catch (\Exception $e) {
-            // Fall back to checking common variant names
-            $variants = $this->getCommonVariantNames($store, $filename, $hash);
-        }
-
-        return array_unique($variants);
-    }
-
-    /**
-     * Find variants in a filesystem.
+     * Uses each store's own resolution strategy (FileResolutionStrategy::findVariants()), so it
+     * follows however the project lays files out. The previous implementation guessed the layout
+     * as `folder/hashprefix/basename__variant.ext`, which is only the protected (legacy-hash)
+     * layout: variants of published files, at natural paths, were never found, and when listing
+     * failed it fell back to probing a fixed list of common variant names.
      *
-     * @return array<string>
+     * @param FlysystemAssetStore $store
+     * @param string $filename
+     * @param string $hash
+     * @return array<array{0: Filesystem, 1: ParsedFileID}>
      */
-    protected function findVariantsInFilesystem($filesystem, string $filename, string $hash): array
+    protected function getVariantsForFile(FlysystemAssetStore $store, string $filename, string $hash): array
     {
+        $tuple = new ParsedFileID($filename, $hash);
+        $stores = [
+            [$store->getPublicFilesystem(), $store->getPublicResolutionStrategy()],
+            [$store->getProtectedFilesystem(), $store->getProtectedResolutionStrategy()],
+        ];
+
         $variants = [];
-
-        // Build the path to search
-        $folder = dirname($filename);
-        $basename = pathinfo($filename, PATHINFO_FILENAME);
-        $hashPrefix = substr($hash, 0, 10);
-
-        // The variant path format is: folder/hashprefix/basename__variant.ext
-        $searchPath = $folder . '/' . $hashPrefix;
-
-        try {
-            $listing = $filesystem->listContents($searchPath);
-
-            foreach ($listing as $item) {
-                if ($item instanceof \League\Flysystem\FileAttributes) {
-                    $itemPath = $item->path();
-                    $itemBasename = pathinfo($itemPath, PATHINFO_FILENAME);
-
-                    // Check if this is a variant file (contains __ in the name)
-                    if (str_contains($itemBasename, '__') && str_starts_with($itemBasename, $basename . '__')) {
-                        // Extract variant name
-                        $variantPart = substr($itemBasename, strlen($basename) + 2);
-                        if (!empty($variantPart)) {
-                            $variants[] = $variantPart;
-                        }
-                    }
+        foreach ($stores as [$filesystem, $strategy]) {
+            foreach ($strategy->findVariants($tuple, $filesystem) as $parsedFileID) {
+                // findVariants() yields the original too (empty variant); that one stays
+                if ($parsedFileID->getVariant()) {
+                    $variants[] = [$filesystem, $parsedFileID];
                 }
             }
-        } catch (\Exception $e) {
-            // Directory doesn't exist or other error - that's fine
         }
 
         return $variants;
-    }
-
-    /**
-     * Check for common variant names that might exist.
-     *
-     * @return array<string>
-     */
-    protected function getCommonVariantNames(AssetStore $store, string $filename, string $hash): array
-    {
-        $commonVariants = [
-            // Common manipulation variants
-            'Fit100x100',
-            'Fit150x150',
-            'Fit200x200',
-            'Fit300x300',
-            'Fit352x198',
-            'Fill100x100',
-            'Fill150x150',
-            'Fill200x200',
-            'Fill300x300',
-            'ScaleWidth100',
-            'ScaleWidth150',
-            'ScaleWidth200',
-            'ScaleWidth300',
-            'ScaleHeight100',
-            'ScaleHeight150',
-            'ScaleHeight200',
-            'ScaleHeight300',
-            'Pad100x100',
-            'Pad150x150',
-            'Pad200x200',
-            'Pad300x300',
-            // CMS thumbnails
-            'FitMax400x300',
-            'FitMax104x104',
-            'FitMaxWzEwNCwxMDRd',
-            // Chained variants
-            'Fill100x100_ScaleWidth50',
-        ];
-
-        $foundVariants = [];
-        foreach ($commonVariants as $variant) {
-            if ($store->exists($filename, $hash, $variant)) {
-                $foundVariants[] = $variant;
-            }
-        }
-
-        return $foundVariants;
     }
 }

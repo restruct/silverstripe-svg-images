@@ -67,7 +67,11 @@ trait SVGManipulationTrait
      */
     protected function isSVGManipulationEnabled(): bool
     {
-        return SVGImage::config()->get('enable_svg_manipulation') && class_exists(Imagine::class);
+        // SVGImage (and subclasses) read their own config; SVGDBFile has no such config of its own,
+        // so it follows SVGImage's.
+        $config = $this instanceof SVGImage ? static::config() : SVGImage::config();
+
+        return $config->get('enable_svg_manipulation') && class_exists(Imagine::class);
     }
 
     /**
@@ -198,6 +202,8 @@ trait SVGManipulationTrait
     // =========================================================================
 
     /**
+     * Resize to fit within the given dimensions, maintaining aspect ratio.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -222,6 +228,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Resize to fit within the given dimensions, only if larger.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -247,6 +255,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given width, maintaining aspect ratio.
+     *
      * @param int $width
      * @return AssetContainer|null
      */
@@ -277,6 +287,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given height, maintaining aspect ratio.
+     *
      * @param int $height
      * @return AssetContainer|null
      */
@@ -307,6 +319,66 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given width, maintaining aspect ratio, only if currently wider.
+     *
+     * Without this override core's raster ImageManipulation::ScaleMaxWidth() ran and returned null
+     * for an SVG. Delegates to ScaleWidth() the way FitMax() delegates to Fit(), so the variant is
+     * shared with an equal ScaleWidth() call.
+     *
+     * @param int $width
+     * @return AssetContainer|null
+     */
+    public function ScaleMaxWidth($width)
+    {
+        if (!$this->IsSVG()) {
+            return parent::ScaleMaxWidth($width);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $width = (int)$width;
+
+        // Never upscale: core returns the original when it is already narrow enough
+        if ($this->getWidth() <= $width) {
+            return $this;
+        }
+
+        return $this->ScaleWidth($width);
+    }
+
+    /**
+     * Scale to the given height, maintaining aspect ratio, only if currently taller.
+     *
+     * See ScaleMaxWidth() for why this override exists.
+     *
+     * @param int $height
+     * @return AssetContainer|null
+     */
+    public function ScaleMaxHeight($height)
+    {
+        if (!$this->IsSVG()) {
+            return parent::ScaleMaxHeight($height);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $height = (int)$height;
+
+        // Never upscale: core returns the original when it is already short enough
+        if ($this->getHeight() <= $height) {
+            return $this;
+        }
+
+        return $this->ScaleHeight($height);
+    }
+
+    /**
+     * Crop and resize to fill the given dimensions exactly.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -358,6 +430,12 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Fill to requested dimensions without upscaling.
+     *
+     * Crops to the target aspect ratio first, then only scales down if
+     * the cropped result is larger than the target dimensions.
+     * Matches the behavior of SilverStripe's core ImageManipulation::FillMax().
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -372,14 +450,45 @@ trait SVGManipulationTrait
             return $this;
         }
 
+        $width = (int)$width;
+        $height = (int)$height;
         $currentWidth = $this->getWidth();
         $currentHeight = $this->getHeight();
 
-        if ($currentWidth <= $width && $currentHeight <= $height) {
+        if ($currentWidth <= 0 || $currentHeight <= 0 || $width <= 0 || $height <= 0) {
             return $this;
         }
 
-        return $this->Fill($width, $height);
+        // Already at target dimensions
+        if ($currentWidth === $width && $currentHeight === $height) {
+            return $this;
+        }
+
+        // Compare current and target aspect ratios (matching core SS logic)
+        $imageRatio = $currentWidth / $currentHeight;
+        $cropRatio = $width / $height;
+
+        if ($cropRatio < $imageRatio && $currentHeight < $height) {
+            // Target is narrower than current, and current height is smaller than target
+            // Crop off sides, keep current height (don't upscale height)
+            $fillWidth = (int)round($currentHeight * $cropRatio);
+            $fillHeight = $currentHeight;
+        } elseif ($currentWidth < $width) {
+            // Current width is smaller than target
+            // Crop off top/bottom, keep current width (don't upscale width)
+            $fillWidth = $currentWidth;
+            $fillHeight = (int)round($currentWidth / $cropRatio);
+        } else {
+            // Both dimensions are larger than target, crop to exact target size
+            $fillWidth = $width;
+            $fillHeight = $height;
+        }
+
+        if ($fillWidth <= 0 || $fillHeight <= 0) {
+            return $this;
+        }
+
+        return $this->Fill($fillWidth, $fillHeight);
     }
 
     /**
@@ -461,6 +570,115 @@ trait SVGManipulationTrait
             $root->setAttribute('height', (string)$height);
 
             return $image;
+        }) ?: $this;
+    }
+
+    /*
+     * CropWidth()/CropHeight() used to live in SVGCropperExtension (1.4.0). There they could never
+     * run: an extension method is only reached when the owner has no method of that name, and
+     * both owners inherit core's ImageManipulation::CropWidth()/CropHeight(). Core's raster
+     * versions ran instead and returned null for an SVG. As overrides here they take effect,
+     * and they do not depend on the focuspointcropper module, so they apply unconditionally.
+     */
+
+    /**
+     * Crop to exact width, keeping the full height. Crops from center horizontally.
+     *
+     * @param int $width
+     * @return AssetContainer|null
+     */
+    public function CropWidth($width)
+    {
+        if (!$this->IsSVG()) {
+            return parent::CropWidth($width);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $width = (int)$width;
+        $currentWidth = $this->getWidth();
+        $currentHeight = $this->getHeight();
+
+        // If already narrower or equal, return as-is
+        if ($currentWidth <= $width) {
+            return $this;
+        }
+
+        $variant = $this->variantName(__FUNCTION__, $width);
+
+        return $this->manipulateSVG($variant, function ($image) use ($width, $currentWidth, $currentHeight) {
+            // Calculate center crop offset
+            $cropX = (int)(($currentWidth - $width) / 2);
+            // Crop from center, keeping full height
+            return $image->crop(new Point($cropX, 0), new Box($width, $currentHeight));
+        }) ?: $this;
+    }
+
+    /**
+     * Crop to exact height, keeping the full width. Crops from center vertically.
+     *
+     * @param int $height
+     * @return AssetContainer|null
+     */
+    public function CropHeight($height)
+    {
+        if (!$this->IsSVG()) {
+            return parent::CropHeight($height);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $height = (int)$height;
+        $currentWidth = $this->getWidth();
+        $currentHeight = $this->getHeight();
+
+        // If already shorter or equal, return as-is
+        if ($currentHeight <= $height) {
+            return $this;
+        }
+
+        $variant = $this->variantName(__FUNCTION__, $height);
+
+        return $this->manipulateSVG($variant, function ($image) use ($height, $currentWidth, $currentHeight) {
+            // Calculate center crop offset
+            $cropY = (int)(($currentHeight - $height) / 2);
+            // Crop from center, keeping full width
+            return $image->crop(new Point(0, $cropY), new Box($currentWidth, $height));
+        }) ?: $this;
+    }
+
+    /**
+     * Crop to a specific region of the original, in its own coordinates.
+     *
+     * Always available, as it was on SVGImage in 2.x: it needs nothing from
+     * restruct/silverstripe-focuspointcropper. In 1.4.x it lived in SVGCropperExtension, which is
+     * applied only when that module is installed; SVGCropperExtension::applyCropData() now calls
+     * this.
+     *
+     * @param int $x X offset
+     * @param int $y Y offset
+     * @param int $width Crop width
+     * @param int $height Crop height
+     * @return AssetContainer|null
+     */
+    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
+    {
+        if (!$this->IsSVG()) {
+            return null;
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $variant = $this->variantName('CropRegion', $x, $y, $width, $height);
+
+        return $this->manipulateSVG($variant, function ($image) use ($x, $y, $width, $height) {
+            return $image->crop(new Point($x, $y), new Box($width, $height));
         }) ?: $this;
     }
 

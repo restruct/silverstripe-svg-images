@@ -76,6 +76,9 @@ class SVGDBFile extends DBFile
      *
      * This ensures protected/draft SVG files are accessible.
      *
+     * Typed `: string` because Silverstripe 6's DBFile::Link() is; Silverstripe 5's parent is
+     * untyped, and a child may add a return type the parent lacks, so one signature fits both.
+     *
      * @return string
      */
     #[Override]
