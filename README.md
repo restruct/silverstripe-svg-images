@@ -1,5 +1,8 @@
 # SVG Image support for Silverstripe (assets/uploads)
 
+*Maintained by [Restruct](https://github.com/restruct). If this module saves you time, you can
+[support ongoing maintenance](https://github.com/sponsors/restruct).*
+
 This module provides comprehensive SVG support in Silverstripe's asset management system, including:
 
 - **CMS thumbnail/preview support** for SVG files in AssetAdmin
@@ -10,13 +13,30 @@ This module provides comprehensive SVG support in Silverstripe's asset managemen
 
 ## Version Compatibility
 
-| Branch | Module Version | Silverstripe | PHP |
+| Branch | Module version | Silverstripe | PHP |
 |--------|----------------|--------------|-----|
-| `main` | `2.x` | ^6.0 | ^8.3 |
-| `1` | `1.x` | ^4.0 \|\| ^5.0 | ^7.4 \|\| ^8.0 |
-| `0` | `0.x` | ~3.7 | ^5.6 \|\| ^7.0 |
+| `main` | `3.x` | 5, 6 | 8.1+ (8.3+ on Silverstripe 6) |
+| - (tags only) | `2.0` - `2.1` | 6 | 8.3+ |
+| `ss4/5` | `1.3` - `1.4` | 4, 5 | 7.4+ |
+| - (tags only) | `1.0` - `1.2` | 3 | |
 
-**Note:** `composer.json` is the source of truth for exact version constraints.
+`composer.json` on each branch is the source of truth for exact constraints. `3.x` replaces both
+`1.x` and `2.x`; they receive no further releases. Upgrading? See [UPGRADING.md](UPGRADING.md) and
+[CHANGELOG.md](CHANGELOG.md).
+
+## Requirements and installation
+
+- Silverstripe 5 or 6 (`silverstripe/framework` and `silverstripe/assets`), PHP 8.1+, `ext-dom`
+- Optional: [jonom/focuspoint](https://github.com/jonom/silverstripe-focuspoint) and/or
+  [restruct/silverstripe-focuspointcropper](https://github.com/restruct/silverstripe-focuspointcropper)
+  for their SVG-aware methods (see below), `ext-gd` for the `/dev/svg-compare` test images
+
+```bash
+composer require restruct/silverstripe-svg-images
+```
+
+Then flush and build the database (`sake dev/build flush=1` on Silverstripe 5,
+`sake db:build --flush` on 6). SVG uploads are allowed and handled as images from then on.
 
 ## How it works
 
@@ -42,6 +62,8 @@ Unlike raster images, SVG manipulation preserves the vector format by modifying 
 - `ScaleHeight($height)` - Scale to specific height, maintaining aspect ratio
 - `ScaleMaxWidth($width)` - Scale to max width, only if larger
 - `ScaleMaxHeight($height)` - Scale to max height, only if larger
+- `CropWidth($width)` / `CropHeight($height)` - Crop to a width/height from the centre, keeping the other dimension (never enlarges)
+- `CropRegion($x, $y, $width, $height)` - Crop to a region, in the original's coordinates
 - `Resampled()` - Returns the SVG unchanged (for compatibility with Image templates)
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
@@ -59,12 +81,12 @@ This module provides optional extensions that are automatically applied when the
 
 #### Crop Support (requires `restruct/silverstripe-focuspointcropper`)
 
-When the FocusPointCropper module is installed, these additional methods become available:
+When the FocusPointCropper module is installed, SVGs also get:
 
-- `CropRegion($x, $y, $width, $height)` - Crop to specific region
-- `CropWidth($width)` - Crop to width using CropData
-- `CropHeight($height)` - Crop to height using CropData
-- `applyCropData($cropDataJson)` - Apply CMS-defined crop data
+- `applyCropData($cropDataJson)` - Apply the crop region set in the CMS (uses `CropRegion()`)
+
+(`CropRegion()`, `CropWidth()` and `CropHeight()` no longer need this module; they are core
+operations, above.)
 
 #### FocusPoint Support (requires `jonom/focuspoint`)
 
@@ -77,11 +99,16 @@ When the FocusPoint module is installed, these additional methods become availab
 
 ### SVG Sanitization
 
-SVG files are automatically sanitized on upload using [enshrined/svg-sanitize](https://github.com/enshrined/svg-sanitize). This removes potentially dangerous content like:
+SVG files are automatically sanitized when they are written using [enshrined/svg-sanitize](https://github.com/enshrined/svg-sanitize): on upload (through AssetAdmin or a relation's upload field) and whenever a file's content is replaced. The unsanitized upload is not kept in the asset store. This removes potentially dangerous content like:
 - JavaScript/event handlers
 - External references (can be disabled)
 - PHP tags
 - Other XSS vectors
+
+A file the sanitizer cannot parse is stored as uploaded.
+
+> Up to 1.4.1 and 2.1.0, sanitization never actually ran, despite being enabled by default. SVGs
+> uploaded with those versions are unsanitized; see [UPGRADING.md](UPGRADING.md).
 
 Configuration options:
 
@@ -103,7 +130,7 @@ Restruct\Silverstripe\SVG\SVGImage:
   auto_migrate_svg_class: true
 ```
 
-Then run `dev/build`. The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables (including files with NULL or empty ClassName).
+Then build the database (`dev/build` on Silverstripe 5, `sake db:build` on 6). The migration will update the `ClassName` in `File`, `File_Live`, and `File_Versions` tables (including files with NULL or empty ClassName).
 
 > **Note:** The migration runs via `requireDefaultRecords()`. If you use `dev/build no-populate=1`, the migration will be skipped. Run `dev/build/defaults` separately to trigger it, or run a normal `dev/build` without `no-populate`.
 
@@ -181,7 +208,7 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 ### SVG vs PNG Comparison Tool
 
-A visual comparison tool is available at `/dev/svg-compare` to verify that SVG manipulations behave consistently with PNG manipulations.
+A visual comparison tool is available at `/dev/svg-compare` (in dev mode, or for users with `ADMIN` or `ALL_DEV_ADMIN` permission) to verify that SVG manipulations behave consistently with PNG manipulations.
 
 ![SVG vs PNG Comparison Tool](docs/svg-compare-test.png)
 
@@ -197,14 +224,24 @@ The tool:
 To clear all generated SVG variant files (useful after upgrading or when manipulation settings change):
 
 ```bash
-# Dry run - shows what would be deleted
+# Silverstripe 6
+vendor/bin/sake tasks:ClearSVGVariantsTask              # dry run - shows what would be deleted
+vendor/bin/sake tasks:ClearSVGVariantsTask --confirm    # actually delete variants
+vendor/bin/sake tasks:ClearSVGVariantsTask --confirm -v # with a line per file
+
+# Silverstripe 5
 vendor/bin/sake dev/tasks/ClearSVGVariantsTask
-
-# Actually delete variants
 vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1
-
-# Verbose output
 vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1 verbose=1
 ```
 
-Variants will be regenerated on next request using the current manipulation settings.
+Only variants are deleted; the original SVGs stay. Variants will be regenerated on next request
+using the current manipulation settings.
+
+## Running the tests
+
+The suite in `tests/` needs a Silverstripe host project with `silverstripe/recipe-testing`, and
+the module installed through a **symlinked** path repository (`tests/` is `export-ignore`d, so a
+normal install has no tests). `.github/workflows/ci.yml` builds exactly such a host for
+Silverstripe 5 and 6 and is the reference. `jonom/focuspoint` must be installed for the
+focus-point tests to run instead of skipping.
