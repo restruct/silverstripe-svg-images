@@ -46,7 +46,8 @@ class SVGCompareController extends Controller
         // Was: "Security handled by DevelopmentAdmin middleware (CSRF protection, auth)". It is not.
         // DevelopmentAdmin only refuses a user who can see NO dev link at all, then hands the
         // request to a registered controller unchecked; and the dev-URL confirmation middleware
-        // passes a non-admin straight through. So in live mode anyone who can see one dev link
+        // does not stop a non-admin either (SS5 passes them straight through; SS6 asks them to
+        // confirm, which they can click through). So in live mode anyone who can see one dev link
         // (e.g. holding BUILDTASK_CAN_RUN) reached this page - whose ?install/?remove write to the
         // asset store. Core dev controllers guard themselves the same way (TaskRunner::canInit()).
         if (!$this->canInit()) {
