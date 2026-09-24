@@ -203,4 +203,21 @@ class SVGManipulationTest extends SapphireTest
             ['FillMax', [300, 100]],
         ]);
     }
+
+    /**
+     * Regression: CropWidth()/CropHeight() for SVGs were added in 1.4.0 as SVGCropperExtension
+     * methods, where they could never run - the owner already has core's ImageManipulation
+     * versions, and an extension method is only reached when the owner has none. Core's raster
+     * crop ran instead and returned null for an SVG.
+     */
+    public function testCropWidthAndHeightMatchCore(): void
+    {
+        $this->assertMatchesCore([
+            ['CropWidth', [100]],
+            ['CropHeight', [100]],
+            ['CropWidth', [300]],
+        ]);
+
+        $this->assertInstanceOf(SVGDBFile::class, $this->makeSVG(null, 'crop.svg')->CropWidth(100));
+    }
 }

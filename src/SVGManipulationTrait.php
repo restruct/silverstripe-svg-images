@@ -515,6 +515,84 @@ trait SVGManipulationTrait
         }) ?: $this;
     }
 
+    /*
+     * CropWidth()/CropHeight() used to live in SVGCropperExtension (1.4.0). There they could never
+     * run: an extension method is only reached when the owner has no method of that name, and
+     * both owners inherit core's ImageManipulation::CropWidth()/CropHeight(). Core's raster
+     * versions ran instead and returned null for an SVG. As overrides here they take effect,
+     * and they do not depend on the focuspointcropper module, so they apply unconditionally.
+     */
+
+    /**
+     * Crop to exact width, keeping the full height. Crops from center horizontally.
+     *
+     * @param int $width
+     * @return AssetContainer|null
+     */
+    public function CropWidth($width)
+    {
+        if (!$this->IsSVG()) {
+            return parent::CropWidth($width);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $width = (int)$width;
+        $currentWidth = $this->getWidth();
+        $currentHeight = $this->getHeight();
+
+        // If already narrower or equal, return as-is
+        if ($currentWidth <= $width) {
+            return $this;
+        }
+
+        $variant = $this->variantName(__FUNCTION__, $width);
+
+        return $this->manipulateSVG($variant, function ($image) use ($width, $currentWidth, $currentHeight) {
+            // Calculate center crop offset
+            $cropX = (int)(($currentWidth - $width) / 2);
+            // Crop from center, keeping full height
+            return $image->crop(new Point($cropX, 0), new Box($width, $currentHeight));
+        }) ?: $this;
+    }
+
+    /**
+     * Crop to exact height, keeping the full width. Crops from center vertically.
+     *
+     * @param int $height
+     * @return AssetContainer|null
+     */
+    public function CropHeight($height)
+    {
+        if (!$this->IsSVG()) {
+            return parent::CropHeight($height);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $height = (int)$height;
+        $currentWidth = $this->getWidth();
+        $currentHeight = $this->getHeight();
+
+        // If already shorter or equal, return as-is
+        if ($currentHeight <= $height) {
+            return $this;
+        }
+
+        $variant = $this->variantName(__FUNCTION__, $height);
+
+        return $this->manipulateSVG($variant, function ($image) use ($height, $currentWidth, $currentHeight) {
+            // Calculate center crop offset
+            $cropY = (int)(($currentHeight - $height) / 2);
+            // Crop from center, keeping full width
+            return $image->crop(new Point(0, $cropY), new Box($currentWidth, $height));
+        }) ?: $this;
+    }
+
     /**
      * @return AssetContainer|null
      */

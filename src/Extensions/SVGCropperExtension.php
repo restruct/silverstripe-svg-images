@@ -12,7 +12,8 @@ use SilverStripe\Core\Extension;
  * Extension providing crop functionality for SVG images.
  *
  * Applied to SVGImage and SVGDBFile when restruct/silverstripe-focuspointcropper is installed.
- * Provides applyCropData(), CropWidth(), CropHeight(), and CropRegion() methods.
+ * Provides applyCropData() and CropRegion(). (CropWidth()/CropHeight() moved to
+ * SVGManipulationTrait, where they can actually override core's - see the note there.)
  *
  * Extends Core\Extension rather than ORM\DataExtension: DataExtension is deprecated in
  * Silverstripe 5 and removed in 6, and nothing here needs more than Extension provides.
@@ -75,76 +76,6 @@ class SVGCropperExtension extends Extension
 
         return $this->owner->manipulateSVG($variant, function ($image) use ($x, $y, $width, $height) {
             return $image->crop(new Point($x, $y), new Box($width, $height));
-        }) ?: $this->owner;
-    }
-
-    /**
-     * Crop to exact width, keeping the full height. Crops from center horizontally.
-     *
-     * @param int $width
-     * @return AssetContainer|null
-     */
-    public function CropWidth($width)
-    {
-        if (!$this->owner->IsSVG()) {
-            return $this->owner->CropWidth($width);
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this->owner;
-        }
-
-        $width = (int)$width;
-        $currentWidth = $this->owner->getWidth();
-        $currentHeight = $this->owner->getHeight();
-
-        // If already narrower or equal, return as-is
-        if ($currentWidth <= $width) {
-            return $this->owner;
-        }
-
-        $variant = $this->owner->variantName('CropWidth', $width);
-
-        return $this->owner->manipulateSVG($variant, function ($image) use ($width, $currentWidth, $currentHeight) {
-            // Calculate center crop offset
-            $cropX = (int)(($currentWidth - $width) / 2);
-            // Crop from center, keeping full height
-            return $image->crop(new Point($cropX, 0), new Box($width, $currentHeight));
-        }) ?: $this->owner;
-    }
-
-    /**
-     * Crop to exact height, keeping the full width. Crops from center vertically.
-     *
-     * @param int $height
-     * @return AssetContainer|null
-     */
-    public function CropHeight($height)
-    {
-        if (!$this->owner->IsSVG()) {
-            return $this->owner->CropHeight($height);
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this->owner;
-        }
-
-        $height = (int)$height;
-        $currentWidth = $this->owner->getWidth();
-        $currentHeight = $this->owner->getHeight();
-
-        // If already shorter or equal, return as-is
-        if ($currentHeight <= $height) {
-            return $this->owner;
-        }
-
-        $variant = $this->owner->variantName('CropHeight', $height);
-
-        return $this->owner->manipulateSVG($variant, function ($image) use ($height, $currentWidth, $currentHeight) {
-            // Calculate center crop offset
-            $cropY = (int)(($currentHeight - $height) / 2);
-            // Crop from center, keeping full width
-            return $image->crop(new Point(0, $cropY), new Box($currentWidth, $height));
         }) ?: $this->owner;
     }
 
