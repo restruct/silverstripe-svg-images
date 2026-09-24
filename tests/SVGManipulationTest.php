@@ -188,4 +188,19 @@ class SVGManipulationTest extends SapphireTest
         $this->assertNotInstanceOf(SVGImage::class, $png);
         $this->assertStringEndsWith('.png', $png->Fit(100, 100)->getURL());
     }
+
+    /**
+     * Regression: 1.4.1 fixed FillMax to match core, but only in SVGManipulationTrait, which
+     * SVGImage did not use - SVGImage kept its own older copy. So FillMax on an SVGImage (the
+     * common case, straight from a template) still returned the untouched 200x150 original for
+     * FillMax(500, 500), where core crops to 150x150; only chained calls got the fix.
+     */
+    public function testFillMaxMatchesCore(): void
+    {
+        $this->assertMatchesCore([
+            ['FillMax', [150, 150]],
+            ['FillMax', [500, 500]],
+            ['FillMax', [300, 100]],
+        ]);
+    }
 }

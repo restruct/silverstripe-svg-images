@@ -67,7 +67,11 @@ trait SVGManipulationTrait
      */
     protected function isSVGManipulationEnabled(): bool
     {
-        return SVGImage::config()->get('enable_svg_manipulation') && class_exists(Imagine::class);
+        // SVGImage (and subclasses) read their own config; SVGDBFile has no such config of its own,
+        // so it follows SVGImage's.
+        $config = $this instanceof SVGImage ? static::config() : SVGImage::config();
+
+        return $config->get('enable_svg_manipulation') && class_exists(Imagine::class);
     }
 
     /**
@@ -198,6 +202,8 @@ trait SVGManipulationTrait
     // =========================================================================
 
     /**
+     * Resize to fit within the given dimensions, maintaining aspect ratio.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -222,6 +228,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Resize to fit within the given dimensions, only if larger.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -247,6 +255,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given width, maintaining aspect ratio.
+     *
      * @param int $width
      * @return AssetContainer|null
      */
@@ -277,6 +287,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given height, maintaining aspect ratio.
+     *
      * @param int $height
      * @return AssetContainer|null
      */
@@ -307,6 +319,8 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Crop and resize to fill the given dimensions exactly.
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
