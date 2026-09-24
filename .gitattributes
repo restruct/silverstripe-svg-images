@@ -1,0 +1,10 @@
+# Keep development-only files out of dist installs (Packagist zips). CI and local module work must
+# therefore install this module as a PATH repository with symlink: true, or a real checkout -
+# a dist install contains no tests at all.
+/tests            export-ignore
+/.github          export-ignore
+/.gitattributes   export-ignore
+/.gitignore       export-ignore
+/phpunit.xml.dist export-ignore
+/UPGRADING.md     export-ignore
+/docs             export-ignore

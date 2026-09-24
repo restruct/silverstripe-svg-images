@@ -1,0 +1,211 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: SS${{ matrix.silverstripe }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One job per supported Silverstripe major, at the oldest and newest PHP that major is
+          # used with here. The module's composer.json is the source of truth for the supported
+          # range; this matrix must follow it.
+          - silverstripe: '5'
+            php: '8.1'
+            recipe: '^5'
+            testing: '^3'
+          - silverstripe: '5'
+            php: '8.3'
+            recipe: '^5'
+            testing: '^3'
+          - silverstripe: '6'
+            php: '8.3'
+            recipe: '^6'
+            testing: '^4'
+          - silverstripe: '6'
+            php: '8.4'
+            recipe: '^6'
+            testing: '^4'
+
+    services:
+      database:
+        # MariaDB rather than MySQL: it matches both the local dev machines and the Forge
+        # servers, so a version-specific failure here means something real.
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: ss_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - name: Check out the module
+        uses: actions/checkout@v4
+        with:
+          path: module
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          # gd: the suite generates raster images to compare SVG manipulations against core's
+          extensions: mbstring, intl, pdo_mysql, mysqli, gd, zip, dom, xml, tokenizer, simplexml, ctype, hash, session
+          tools: composer:v2
+          coverage: none
+
+      - name: Build a host project
+        # The module cannot be tested on its own: it needs a booted Silverstripe app. The host
+        # composer.json is written by hand - there is no skeleton package to create from,
+        # recipe-cms is the thing to require.
+        #
+        # The module is pulled in through a PATH repository pointing at the checkout, symlinked
+        # rather than mirrored ON PURPOSE: /tests is export-ignore in .gitattributes, so a mirrored
+        # (dist-style) install would contain no tests and the suite would silently pass empty.
+        run: |
+          mkdir -p app-host
+          cd app-host
+          cat > composer.json <<JSON
+          {
+            "name": "restruct/ci-host",
+            "require": {
+              "silverstripe/recipe-cms": "${{ matrix.recipe }}",
+              "silverstripe/recipe-testing": "${{ matrix.testing }}",
+              "restruct/silverstripe-svg-images": "*"
+            },
+            "repositories": [
+              { "type": "path", "url": "../module", "options": { "symlink": true } }
+            ],
+            "autoload-dev": {
+              "psr-4": {
+                "Restruct\\\\Silverstripe\\\\SVG\\\\Tests\\\\": "vendor/restruct/silverstripe-svg-images/tests/"
+              }
+            },
+            "minimum-stability": "dev",
+            "prefer-stable": true,
+            "config": { "allow-plugins": true }
+          }
+          JSON
+          # Silverstripe 5 is in security-fixes-only until its April 2027 EOL, and every release
+          # of silverstripe/cms 5 is covered by advisory PKSA-pjvm-vnw2-n3m2 (range <6.2.1), which
+          # will not be patched there. Composer therefore refuses to install it under the default
+          # policy. Blocking is disabled HERE ONLY, in a throwaway CI host project.
+          composer config policy.advisories.block false
+          composer update --no-interaction --no-progress
+
+      - name: Configure the test suite
+        run: |
+          cd app-host
+          cat > phpunit.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!-- Warning-to-error escalation is the RUNNER's behaviour and differs by PHPUnit
+               major: 9 (SS5) converts warnings by default, 11 (SS6) has no such attribute.
+               failOnWarning is pinned so a warning behaves identically on every leg. -->
+          <phpunit bootstrap="vendor/silverstripe/framework/tests/bootstrap.php" colors="true"
+                   failOnWarning="true">
+              <testsuites>
+                  <testsuite name="svgimages">
+                      <directory>vendor/restruct/silverstripe-svg-images/tests</directory>
+                  </testsuite>
+                  <testsuite name="consumer">
+                      <directory>app/tests</directory>
+                  </testsuite>
+              </testsuites>
+          </phpunit>
+          XML
+
+      - name: Add a consumer-shape database test
+        # Guards a class of bug a module's own suite structurally cannot catch: an unbuildable
+        # fixture in this module's tests/ dir fatals the temp-database build in every CONSUMING
+        # project (quickaddnew 2.1.0). The module's fixtures are loaded by PHPUnit, not registered
+        # in the class manifest, so only a test in the host exercises it.
+        run: |
+          mkdir -p app-host/app/tests
+          cat > app-host/app/tests/ConsumerDbTest.php <<'PHP'
+          <?php
+
+          use SilverStripe\Dev\SapphireTest;
+          use SilverStripe\Security\Member;
+
+          class ConsumerDbTest extends SapphireTest
+          {
+              protected $usesDatabase = true;
+
+              public function testTempDatabaseBuilds()
+              {
+                  $m = Member::create(['FirstName' => 'x']);
+                  $m->write();
+                  $this->assertGreaterThan(0, $m->ID);
+              }
+          }
+          PHP
+
+      - name: Run tests
+        working-directory: app-host
+        env:
+          SS_DATABASE_CLASS: MySQLDatabase
+          SS_DATABASE_SERVER: 127.0.0.1
+          SS_DATABASE_PORT: 3306
+          SS_DATABASE_USERNAME: root
+          SS_DATABASE_PASSWORD: root
+          SS_DATABASE_NAME: ss_ci
+          SS_ENVIRONMENT_TYPE: dev
+          # PHPUnit 11 (SS6) ignores a `flush=1` argument, so the manifest is flushed through
+          # this instead. Harmless on PHPUnit 9.
+          SS_PHPUNIT_FLUSH: 1
+        run: |
+          # SS5/PHPUnit 9 needs a path-first flush=1 as well; SS_PHPUNIT_FLUSH covers SS6
+          if [ "${{ matrix.silverstripe }}" = "5" ]; then
+            vendor/bin/phpunit vendor/restruct/silverstripe-svg-images/tests flush=1
+          else
+            vendor/bin/phpunit --testsuite svgimages
+          fi
+          vendor/bin/phpunit --testsuite consumer
+
+      - name: Boot the app and build the database
+        # The suite proves the classes behave; this proves the module does not break a real boot
+        # after a flush - the moment an unguarded class or bad config would fatal.
+        working-directory: app-host
+        env:
+          SS_DATABASE_CLASS: MySQLDatabase
+          SS_DATABASE_SERVER: 127.0.0.1
+          SS_DATABASE_PORT: 3306
+          SS_DATABASE_USERNAME: root
+          SS_DATABASE_PASSWORD: root
+          SS_DATABASE_NAME: ss_ci
+          SS_ENVIRONMENT_TYPE: dev
+        run: |
+          if [ "${{ matrix.silverstripe }}" = "5" ]; then
+            vendor/bin/sake dev/build flush=1
+            vendor/bin/sake dev/tasks | grep -q ClearSVGVariantsTask
+          else
+            vendor/bin/sake db:build --flush
+            vendor/bin/sake tasks | grep -q ClearSVGVariantsTask
+          fi
+
+  lint:
+    name: Lint PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of the module's declared php constraint, as exercised above.
+        php: ['8.1', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Syntax check every PHP file
+        run: find src tests -name '*.php' -print0 | xargs -0 -n1 php -l

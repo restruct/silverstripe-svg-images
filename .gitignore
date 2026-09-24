@@ -2,3 +2,5 @@
 node_modules
 composer.lock
 _manifest_exclude
+# vendor-exposed assets when developing against the module directly
+public/
