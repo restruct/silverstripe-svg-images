@@ -33,6 +33,8 @@ See [UPGRADING.md](UPGRADING.md).
 - `FillMax()` on an `SVGImage` now matches core. The 1.4.1 fix only reached chained variants.
 - `CropWidth()` / `CropHeight()` work on SVGs. In 1.4.x core's raster crop ran instead and returned
   nothing for every SVG.
+- `ScaleMaxWidth()` / `ScaleMaxHeight()` work on SVGs. They were documented as available, but
+  core's raster versions ran and returned nothing for every SVG.
 - An SVG uploaded through a relation and published in the same request is now an `SVGImage` on
   the live stage too, not a plain `Image`.
 - `/dev/svg-compare` no longer fatals on Silverstripe 6.

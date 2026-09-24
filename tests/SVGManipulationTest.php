@@ -106,6 +106,42 @@ class SVGManipulationTest extends SapphireTest
     }
 
     /**
+     * Regression: ScaleMaxWidth()/ScaleMaxHeight() were documented as core operations that work on
+     * SVGs, but the trait did not override them. Core's raster versions ran instead and returned
+     * null for an SVG. Covers both branches: a limit below the 200x150 original (scales down) and
+     * one above it (no upscaling, original size kept).
+     */
+    public function testScaleMaxMatchesCore(): void
+    {
+        $this->assertMatchesCore([
+            ['ScaleMaxWidth', [150]],
+            ['ScaleMaxWidth', [300]],
+            ['ScaleMaxHeight', [100]],
+            ['ScaleMaxHeight', [200]],
+        ]);
+    }
+
+    /**
+     * The downscaled result is a vector variant, not a raster, and the operations keep working on
+     * a chained SVGDBFile variant as well as on the record.
+     */
+    public function testScaleMaxReturnsVectorVariantsAndChains(): void
+    {
+        $svg = $this->makeSVG();
+
+        $this->assertInstanceOf(SVGDBFile::class, $svg->ScaleMaxWidth(100));
+        $this->assertInstanceOf(SVGDBFile::class, $svg->ScaleMaxHeight(75));
+        $this->assertSame('100x75', $this->sizeOf($svg->ScaleMaxWidth(100)));
+        $this->assertSame('100x75', $this->sizeOf($svg->ScaleMaxHeight(75)));
+
+        // On a variant: 200x150 -> Fill 100x100 -> ScaleMax* limits below and above that size
+        $this->assertSame('50x50', $this->sizeOf($svg->Fill(100, 100)->ScaleMaxWidth(50)));
+        $this->assertSame('100x100', $this->sizeOf($svg->Fill(100, 100)->ScaleMaxWidth(400)));
+        $this->assertSame('40x40', $this->sizeOf($svg->Fill(100, 100)->ScaleMaxHeight(40)));
+        $this->assertSame('100x100', $this->sizeOf($svg->Fill(100, 100)->ScaleMaxHeight(400)));
+    }
+
+    /**
      * Size parity alone cannot tell a crop from a stretch: squashing 200x150 into 150x150 has the
      * right size too. The rendered aspect (width/height) must match the viewBox aspect, or the
      * artwork is distorted.

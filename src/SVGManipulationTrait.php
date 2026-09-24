@@ -319,6 +319,64 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Scale to the given width, maintaining aspect ratio, only if currently wider.
+     *
+     * Without this override core's raster ImageManipulation::ScaleMaxWidth() ran and returned null
+     * for an SVG. Delegates to ScaleWidth() the way FitMax() delegates to Fit(), so the variant is
+     * shared with an equal ScaleWidth() call.
+     *
+     * @param int $width
+     * @return AssetContainer|null
+     */
+    public function ScaleMaxWidth($width)
+    {
+        if (!$this->IsSVG()) {
+            return parent::ScaleMaxWidth($width);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $width = (int)$width;
+
+        // Never upscale: core returns the original when it is already narrow enough
+        if ($this->getWidth() <= $width) {
+            return $this;
+        }
+
+        return $this->ScaleWidth($width);
+    }
+
+    /**
+     * Scale to the given height, maintaining aspect ratio, only if currently taller.
+     *
+     * See ScaleMaxWidth() for why this override exists.
+     *
+     * @param int $height
+     * @return AssetContainer|null
+     */
+    public function ScaleMaxHeight($height)
+    {
+        if (!$this->IsSVG()) {
+            return parent::ScaleMaxHeight($height);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $height = (int)$height;
+
+        // Never upscale: core returns the original when it is already short enough
+        if ($this->getHeight() <= $height) {
+            return $this;
+        }
+
+        return $this->ScaleHeight($height);
+    }
+
+    /**
      * Crop and resize to fill the given dimensions exactly.
      *
      * @param int $width
