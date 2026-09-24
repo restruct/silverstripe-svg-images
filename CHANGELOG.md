@@ -44,7 +44,8 @@ See [UPGRADING.md](UPGRADING.md).
 - `CropRegion()`, `CropWidth()` and `CropHeight()` are core operations on every SVG. In 1.4.x they
   needed `restruct/silverstripe-focuspointcropper`; `applyCropData()` still does.
 - The optional crop/focus-point extensions extend `Core\Extension` instead of `DataExtension`.
-- Licence is BSD-3-Clause, as on every release except 2.1.0 (MIT).
+- Licence is MIT, as declared by 2.1.0 (earlier releases declared BSD-3-Clause), and a `LICENSE`
+  file with the MIT text is added.
 
 ### Removed
 

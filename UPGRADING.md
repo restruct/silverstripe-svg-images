@@ -35,6 +35,7 @@ untrusted users could upload SVGs, review those files or re-upload them.
 - `CropRegion()`, `CropWidth()` and `CropHeight()` no longer need
   `restruct/silverstripe-focuspointcropper`.
 - On Silverstripe 6 the task is run as `sake tasks:ClearSVGVariantsTask --confirm -v`.
+- The licence is MIT (1.x declared BSD-3-Clause), with a `LICENSE` file in the package.
 
 ### From 2.x
 
@@ -43,4 +44,4 @@ untrusted users could upload SVGs, review those files or re-upload them.
   `callable $writeln` instead of a `PolyOutput`. See the [changelog](CHANGELOG.md).
 - `--verbose` is no longer a task option, so sake runs the task again; the global `-v` gives the
   same output.
-- The licence is BSD-3-Clause again (2.1.0 declared MIT).
+- The licence stays MIT, as in 2.1.0; the package now also ships a `LICENSE` file.
