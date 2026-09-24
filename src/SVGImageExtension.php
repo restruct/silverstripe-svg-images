@@ -9,27 +9,26 @@ use SilverStripe\ORM\DB;
 /**
  * Extension to ensure SVG files get the correct ClassName on upload.
  *
- * Uses onAfterWrite() with a direct DB query because the ORM enforces
- * relation class types during write. When uploading through a has_one Image
- * field, the framework creates/saves as Image class even though
- * class_for_file_extension correctly maps svg to SVGImage.
+ * When uploading SVGs through relation fields (e.g., `many_many Images => Image::class`),
+ * the framework enforces the relation's class type, ignoring the `class_for_file_extension`
+ * config. This extension corrects the ClassName after the write completes.
  *
- * The onBeforeWrite() approach doesn't work because the ORM overwrites
- * the ClassName after our extension runs.
+ * Backported from SS6 version (commit f6d1d91), with onAfterWrite DB fix for relation uploads.
  */
 class SVGImageExtension extends Extension
 {
     /**
-     * After writing a file, check if it's an SVG and fix the ClassName if needed.
+     * After writing a file, ensure SVGs have the correct ClassName.
      *
-     * Uses direct DB query because the ORM enforces relation class types.
+     * Uses direct DB query because the ORM writes the ClassName based on
+     * the relation's class type, not the class_for_file_extension config.
      */
     public function onAfterWrite(): void
     {
         /** @var File $owner */
         $owner = $this->getOwner();
 
-        // Check if this is an SVG file that's not already an SVGImage instance
+        // Fix ClassName for SVG files uploaded through Image relations
         if ($owner->getExtension() === 'svg' && !($owner instanceof SVGImage)) {
             DB::prepared_query(
                 'UPDATE "File" SET "ClassName" = ? WHERE "ID" = ?',

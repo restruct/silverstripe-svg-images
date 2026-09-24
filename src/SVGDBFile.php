@@ -2,7 +2,6 @@
 
 namespace Restruct\Silverstripe\SVG;
 
-use Override;
 use SilverStripe\Assets\Storage\DBFile;
 use SilverStripe\ORM\FieldType\DBField;
 
@@ -30,7 +29,6 @@ class SVGDBFile extends DBFile
      *
      * @return bool
      */
-    #[Override]
     public function getIsImage(): bool
     {
         if ($this->IsSVG()) {
@@ -56,8 +54,6 @@ class SVGDBFile extends DBFile
     /**
      * Override ThumbnailURL to return the SVG URL directly with grant access.
      *
-     * This ensures protected/draft SVG files display correctly in the CMS.
-     *
      * @param int $width
      * @param int $height
      * @return string|null
@@ -65,24 +61,21 @@ class SVGDBFile extends DBFile
     public function ThumbnailURL($width, $height)
     {
         if ($this->getExtension() === 'svg') {
-            return $this->getURL(true); // grant=true for protected access
+            return $this->getURL(true);
         }
 
         return parent::ThumbnailURL($width, $height);
     }
 
     /**
-     * Override Link to return the SVG URL with grant access.
+     * Return URL with grant access for protected/draft files.
      *
-     * This ensures protected/draft SVG files are accessible.
-     *
-     * @return string
+     * @return string|null
      */
-    #[Override]
-    public function Link(): string
+    public function Link()
     {
         if ($this->getExtension() === 'svg') {
-            return $this->getURL(true) ?: ''; // grant=true for protected access
+            return $this->getURL(true);
         }
 
         return parent::Link();

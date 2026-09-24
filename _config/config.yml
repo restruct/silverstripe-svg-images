@@ -2,11 +2,7 @@
 Name: svgassetsfiletype
 After: '#assetsfiletypes'
 ---
-SilverStripe\Control\Director:
-  rules:
-    'dev/svg-compare': 'Restruct\Silverstripe\SVG\Controllers\SVGCompareController'
-
-
+# Convert SVG uploads to SVGImage class automatically
 SilverStripe\Assets\File:
   extensions:
     - Restruct\Silverstripe\SVG\SVGImageExtension
@@ -26,6 +22,12 @@ SilverStripe\Assets\Storage\DBFile:
   supported_images:
     - image/svg
 
+# Optionally uncomment this to have has_one images loaded as SVG in case of .svg extension
+# You would also need to hack the core framework's ForeignKey class for this to work, see README
+# SilverStripe\Core\Injector\Injector:
+#  SilverStripe\Assets\Image:
+#    class: Restruct\Silverstripe\SVG\SVGImage
+
 ---
 Name: svgmimevalidator
 After: '#mimevalidator'
@@ -36,3 +38,13 @@ SilverStripe\MimeValidator\MimeUploadValidator:
   MimeTypes:
     svg:
       - image/svg
+
+---
+Name: svgcompare-dev
+---
+SilverStripe\Dev\DevelopmentAdmin:
+  registered_controllers:
+    svg-compare:
+      controller: Restruct\Silverstripe\SVG\Controllers\SVGCompareController
+      links:
+        svg-compare: 'Compare SVG vs raster image manipulations'

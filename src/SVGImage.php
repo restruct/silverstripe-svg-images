@@ -8,7 +8,6 @@ use enshrined\svgSanitize\Sanitizer;
 use Imagine\Image\Box;
 use Imagine\Image\ImageInterface;
 use Imagine\Image\Point;
-use Override;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -71,7 +70,6 @@ class SVGImage extends Image
      *
      * @return string
      */
-    #[Override]
     public function getFileType(): string
     {
         if ($this->getExtension() === 'svg') {
@@ -84,7 +82,6 @@ class SVGImage extends Image
     /**
      * Sanitize SVG content on upload.
      */
-    #[Override]
     public function onBeforeWrite(): void
     {
         parent::onBeforeWrite();
@@ -132,8 +129,6 @@ class SVGImage extends Image
     /**
      * Get SVG dimensions from viewBox or width/height attributes.
      *
-     * Uses getString() to support both public and protected/draft assets.
-     *
      * @param string|int $dim "string" for "WxH" format, 0 for width, 1 for height
      * @return string|int|false
      */
@@ -143,14 +138,14 @@ class SVGImage extends Image
             return parent::getDimensions($dim);
         }
 
-        // Use getString() to work with both public and protected files
+        // Use getString() to support both public and protected/draft files
         $content = $this->getString();
         if (empty($content)) {
             return ($dim === "string") ? "File not found" : 0;
         }
 
         $doc = new DOMDocument();
-        @$doc->loadXML($content); // Suppress warnings for malformed SVGs
+        @$doc->loadXML($content);
 
         if (!$doc->documentElement) {
             return ($dim === "string") ? "Cannot parse SVG" : 0;
@@ -603,6 +598,9 @@ class SVGImage extends Image
                 $vbHeight = $currentHeight;
             }
 
+            // Calculate scale to fit content within target
+            $scale = min($width / $vbWidth, $height / $vbHeight);
+
             // Calculate the viewBox dimensions needed for the target aspect ratio
             $targetAspect = $width / $height;
             $currentAspect = $vbWidth / $vbHeight;
@@ -631,32 +629,6 @@ class SVGImage extends Image
     }
 
     /**
-     * Crop to specific region.
-     *
-     * @param int $x X offset
-     * @param int $y Y offset
-     * @param int $width Crop width
-     * @param int $height Crop height
-     * @return AssetContainer|null
-     */
-    public function CropRegion(int $x, int $y, int $width, int $height): ?AssetContainer
-    {
-        if (!$this->IsSVG()) {
-            return null;
-        }
-
-        if (!$this->isSVGManipulationEnabled()) {
-            return $this;
-        }
-
-        $variant = $this->variantName(__FUNCTION__, $x, $y, $width, $height);
-
-        return $this->manipulateSVG($variant, function (\Contao\ImagineSvg\Image $image) use ($x, $y, $width, $height) {
-            return $image->crop(new Point($x, $y), new Box($width, $height));
-        }) ?: $this;
-    }
-
-    /**
      * @return AssetContainer|null
      */
     public function CMSThumbnail()
@@ -677,6 +649,24 @@ class SVGImage extends Image
             return $this;
         }
         return parent::StripThumbnail();
+    }
+
+    /**
+     * Override ThumbnailURL to return the SVG URL directly.
+     * This prevents the ThumbnailGenerator from trying to manipulate SVG files.
+     *
+     * @param int $width
+     * @param int $height
+     * @return string|null
+     */
+    public function ThumbnailURL($width, $height)
+    {
+        if ($this->getExtension() === 'svg') {
+            // Pass true to grant access for draft/protected files
+            return $this->getURL(true);
+        }
+
+        return parent::ThumbnailURL($width, $height);
     }
 
     // =========================================================================
@@ -708,34 +698,19 @@ class SVGImage extends Image
     }
 
     /**
-     * Override ThumbnailURL to return the SVG URL directly with grant access.
-     *
-     * This prevents the ThumbnailGenerator from trying to manipulate SVG files
-     * and ensures protected/draft SVG files display correctly in the CMS.
-     */
-    public function ThumbnailURL($width, $height)
-    {
-        if ($this->getExtension() === 'svg') {
-            return $this->getURL(true); // grant=true for protected access
-        }
-
-        return parent::ThumbnailURL($width, $height);
-    }
-
-    /**
-     * Return CMS preview link. For SVGs, returns the URL directly.
+     * Return CMS preview link.
      *
      * @param string|null $action
      * @return string|null
      */
-    #[Override]
     public function PreviewLink($action = null): ?string
     {
         if ($this->getExtension() === 'svg') {
             if (!$this->canView()) {
                 return null;
             }
-            return $this->getURL();
+            // Pass true to grant access for draft/protected files
+            return $this->getURL(true);
         }
 
         return parent::PreviewLink($action);
@@ -747,9 +722,6 @@ class SVGImage extends Image
 
     /**
      * Migrate existing SVG files to SVGImage class on dev/build.
-     *
-     * Only runs when auto_migrate_svg_class config is set to true.
-     * Updates ClassName in File, File_Live, and File_Versions tables.
      */
     public function requireDefaultRecords(): void
     {
@@ -763,7 +735,13 @@ class SVGImage extends Image
         $tables = ['File', 'File_Live', 'File_Versions'];
 
         foreach ($tables as $table) {
-            // Use prepared_query and handle NULL/empty ClassName values
+            // Check if table exists (File_Live/File_Versions may not exist without full versioning)
+            if (!DB::get_schema()->hasTable($table)) {
+                continue;
+            }
+
+            // Query must handle NULL/empty ClassName values explicitly
+            // (SQL "!= ?" doesn't match NULL values)
             $result = DB::prepared_query(
                 "SELECT COUNT(*) FROM \"{$table}\" WHERE \"Name\" LIKE '%.svg' AND (\"ClassName\" IS NULL OR \"ClassName\" = '' OR \"ClassName\" != ?)",
                 [$svgClassName]
@@ -780,14 +758,8 @@ class SVGImage extends Image
         }
     }
 
-    // =========================================================================
-    // SVG template helpers
-    // =========================================================================
-
     /**
      * Return raw SVG content for inline embedding.
-     *
-     * Uses getString() to support both public and protected/draft assets.
      *
      * @return DBField|null
      */
@@ -797,7 +769,7 @@ class SVGImage extends Image
             return null;
         }
 
-        // Use getString() to work with both public and protected files
+        // Use getString() to support both public and protected/draft files
         $content = $this->getString();
         if (!empty($content)) {
             return DBField::create_field('HTMLFragment', $content);

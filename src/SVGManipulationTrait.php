@@ -358,6 +358,12 @@ trait SVGManipulationTrait
     }
 
     /**
+     * Fill to requested dimensions without upscaling.
+     *
+     * Crops to the target aspect ratio first, then only scales down if
+     * the cropped result is larger than the target dimensions.
+     * Matches the behavior of SilverStripe's core ImageManipulation::FillMax().
+     *
      * @param int $width
      * @param int $height
      * @return AssetContainer|null
@@ -372,14 +378,45 @@ trait SVGManipulationTrait
             return $this;
         }
 
+        $width = (int)$width;
+        $height = (int)$height;
         $currentWidth = $this->getWidth();
         $currentHeight = $this->getHeight();
 
-        if ($currentWidth <= $width && $currentHeight <= $height) {
+        if ($currentWidth <= 0 || $currentHeight <= 0 || $width <= 0 || $height <= 0) {
             return $this;
         }
 
-        return $this->Fill($width, $height);
+        // Already at target dimensions
+        if ($currentWidth === $width && $currentHeight === $height) {
+            return $this;
+        }
+
+        // Compare current and target aspect ratios (matching core SS logic)
+        $imageRatio = $currentWidth / $currentHeight;
+        $cropRatio = $width / $height;
+
+        if ($cropRatio < $imageRatio && $currentHeight < $height) {
+            // Target is narrower than current, and current height is smaller than target
+            // Crop off sides, keep current height (don't upscale height)
+            $fillWidth = (int)round($currentHeight * $cropRatio);
+            $fillHeight = $currentHeight;
+        } elseif ($currentWidth < $width) {
+            // Current width is smaller than target
+            // Crop off top/bottom, keep current width (don't upscale width)
+            $fillWidth = $currentWidth;
+            $fillHeight = (int)round($currentWidth / $cropRatio);
+        } else {
+            // Both dimensions are larger than target, crop to exact target size
+            $fillWidth = $width;
+            $fillHeight = $height;
+        }
+
+        if ($fillWidth <= 0 || $fillHeight <= 0) {
+            return $this;
+        }
+
+        return $this->Fill($fillWidth, $fillHeight);
     }
 
     /**

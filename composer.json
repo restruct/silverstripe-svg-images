@@ -1,11 +1,10 @@
 {
   "name": "restruct/silverstripe-svg-images",
-  "description": "SVG Image support for Silverstripe with real manipulation and sanitization",
+  "description": "Basic SVG Image support for Silverstripe (Assets/Uploads)",
   "type": "silverstripe-vendormodule",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "keywords": [
-    "silverstripe",
-    "svg"
+    "silverstripe"
   ],
   "homepage": "https://github.com/restruct/silverstripe-svg-images",
   "authors": [
@@ -15,10 +14,9 @@
     }
   ],
   "require": {
-    "silverstripe/assets": "^3",
+    "silverstripe/assets": "^1 || ^2",
     "contao/imagine-svg": "^1.0",
-    "enshrined/svg-sanitize": "^0.20",
-    "ext-dom": "*"
+    "enshrined/svg-sanitize": "^0.20"
   },
   "suggest": {
     "ext-gd": "Required for generating PNG test images in /dev/svg-compare"
@@ -26,6 +24,13 @@
   "autoload": {
     "psr-4": {
       "Restruct\\Silverstripe\\SVG\\": "src/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true,
+      "silverstripe/vendor-plugin": true,
+      "silverstripe/recipe-plugin": true
     }
   }
 }

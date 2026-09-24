@@ -7,10 +7,7 @@ use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\BuildTask;
-use SilverStripe\PolyExecution\PolyOutput;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
+use SilverStripe\ORM\DataObject;
 
 /**
  * ClearSVGVariantsTask - Removes all SVG variant files from the asset store.
@@ -21,35 +18,32 @@ use Symfony\Component\Console\Input\InputOption;
  * - You want to regenerate all SVG variants
  *
  * Usage:
- *   vendor/bin/sake tasks:ClearSVGVariantsTask
- *   vendor/bin/sake tasks:ClearSVGVariantsTask --confirm
+ *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask
+ *   vendor/bin/sake dev/tasks/ClearSVGVariantsTask confirm=1
  *
- * Run without --confirm for a dry run that shows what would be deleted.
+ * Run without confirm=1 for a dry run that shows what would be deleted.
  */
 class ClearSVGVariantsTask extends BuildTask
 {
-    protected static string $commandName = 'ClearSVGVariantsTask';
+    private static $segment = 'ClearSVGVariantsTask';
 
-    protected string $title = 'Clear SVG Variants';
+    protected $title = 'Clear SVG Variants';
 
-    protected static string $description = 'Removes all SVG variant files from the asset store. Run with --confirm to actually delete.';
+    protected $description = 'Removes all SVG variant files from the asset store. Run with confirm=1 to actually delete.';
 
-    public function getOptions(): array
+    /**
+     * @param \SilverStripe\Control\HTTPRequest $request
+     * @return void
+     */
+    public function run($request): void
     {
-        return [
-            new InputOption('confirm', 'c', InputOption::VALUE_NONE, 'Actually delete the variants (without this flag, only shows what would be deleted)'),
-            new InputOption('verbose', 'v', InputOption::VALUE_NONE, 'Show detailed output for each file'),
-        ];
-    }
+        $confirm = $request->getVar('confirm') === '1';
+        $verbose = $request->getVar('verbose') === '1';
 
-    protected function execute(InputInterface $input, PolyOutput $output): int
-    {
-        $confirm = $input->getOption('confirm');
-        $verbose = $input->getOption('verbose');
+        echo "<h2>Clear SVG Variants Task</h2>\n";
 
         if (!$confirm) {
-            $output->writeln('<comment>DRY RUN - Add --confirm to actually delete variants.</comment>');
-            $output->writeln('');
+            echo "<p><strong>DRY RUN</strong> - Add <code>confirm=1</code> to actually delete variants.</p>\n";
         }
 
         /** @var AssetStore $store */
@@ -61,18 +55,20 @@ class ClearSVGVariantsTask extends BuildTask
         $totalVariantsDeleted = 0;
         $totalVariantsFound = 0;
 
-        $output->writeln("Found {$totalImages} SVG images in the database.");
+        echo "<p>Found {$totalImages} SVG images in the database.</p>\n";
 
         if ($totalImages === 0) {
-            $output->writeln('No SVG images to process.');
-            return Command::SUCCESS;
+            echo "<p>No SVG images to process.</p>\n";
+            return;
         }
+
+        echo "<ul>\n";
 
         /** @var SVGImage $image */
         foreach ($svgImages as $image) {
             if (!$image->exists()) {
                 if ($verbose) {
-                    $output->writeln("<comment>{$image->Name}</comment> - File does not exist, skipping");
+                    echo "<li><em>{$image->Name}</em> - File does not exist, skipping</li>\n";
                 }
                 continue;
             }
@@ -85,28 +81,32 @@ class ClearSVGVariantsTask extends BuildTask
             }
 
             // Find and delete variants for this file
-            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose, $output);
+            $variantsDeleted = $this->deleteVariantsForFile($store, $filename, $hash, $confirm, $verbose);
             $totalVariantsFound += $variantsDeleted['found'];
             $totalVariantsDeleted += $variantsDeleted['deleted'];
         }
 
-        $output->writeln('');
-        $output->writeln('<info>Summary</info>');
-        $output->writeln("Total SVG variant files found: <comment>{$totalVariantsFound}</comment>");
+        echo "</ul>\n";
+
+        echo "<h3>Summary</h3>\n";
+        echo "<p>Total SVG variant files found: <strong>{$totalVariantsFound}</strong></p>\n";
 
         if ($confirm) {
-            $output->writeln("Total SVG variant files deleted: <comment>{$totalVariantsDeleted}</comment>");
-            $output->writeln('Variants will be regenerated on next request with the new manipulation code.');
+            echo "<p>Total SVG variant files deleted: <strong>{$totalVariantsDeleted}</strong></p>\n";
+            echo "<p>Variants will be regenerated on next request with the new manipulation code.</p>\n";
         } else {
-            $output->writeln('Run with <comment>--confirm</comment> to delete these variants.');
+            echo "<p>Run with <code>confirm=1</code> to delete these variants.</p>\n";
         }
-
-        return Command::SUCCESS;
     }
 
     /**
      * Delete all variants for a specific file.
      *
+     * @param AssetStore $store
+     * @param string $filename
+     * @param string $hash
+     * @param bool $confirm
+     * @param bool $verbose
      * @return array{found: int, deleted: int}
      */
     protected function deleteVariantsForFile(
@@ -114,8 +114,7 @@ class ClearSVGVariantsTask extends BuildTask
         string $filename,
         string $hash,
         bool $confirm,
-        bool $verbose,
-        PolyOutput $output
+        bool $verbose
     ): array {
         $found = 0;
         $deleted = 0;
@@ -127,19 +126,25 @@ class ClearSVGVariantsTask extends BuildTask
 
             foreach ($variants as $variant) {
                 $found++;
-                $message = "{$filename} - variant: {$variant}";
+                if ($verbose) {
+                    echo "<li>{$filename} - variant: <code>{$variant}</code>";
+                }
 
                 if ($confirm) {
                     // Delete the variant
                     $store->delete($filename, $hash, $variant);
                     $deleted++;
                     if ($verbose) {
-                        $output->writeln("{$message} - <info>DELETED</info>");
+                        echo " - <span style=\"color:green\">DELETED</span>";
                     }
                 } else {
                     if ($verbose) {
-                        $output->writeln("{$message} - would be deleted");
+                        echo " - would be deleted";
                     }
+                }
+
+                if ($verbose) {
+                    echo "</li>\n";
                 }
             }
         }
@@ -153,6 +158,9 @@ class ClearSVGVariantsTask extends BuildTask
     /**
      * Get all variant names for a file.
      *
+     * @param FlysystemAssetStore $store
+     * @param string $filename
+     * @param string $hash
      * @return array<string>
      */
     protected function getVariantsForFile(
@@ -195,6 +203,9 @@ class ClearSVGVariantsTask extends BuildTask
     /**
      * Find variants in a filesystem.
      *
+     * @param \League\Flysystem\FilesystemOperator $filesystem
+     * @param string $filename
+     * @param string $hash
      * @return array<string>
      */
     protected function findVariantsInFilesystem($filesystem, string $filename, string $hash): array
@@ -237,6 +248,9 @@ class ClearSVGVariantsTask extends BuildTask
     /**
      * Check for common variant names that might exist.
      *
+     * @param AssetStore $store
+     * @param string $filename
+     * @param string $hash
      * @return array<string>
      */
     protected function getCommonVariantNames(AssetStore $store, string $filename, string $hash): array
