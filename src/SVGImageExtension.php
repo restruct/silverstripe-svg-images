@@ -58,10 +58,18 @@ class SVGImageExtension extends Extension
 
         // Fix ClassName for SVG files uploaded through Image relations
         if ($owner->getExtension() === 'svg' && !($owner instanceof SVGImage)) {
-            DB::prepared_query(
-                'UPDATE "File" SET "ClassName" = ? WHERE "ID" = ?',
-                [SVGImage::class, $owner->ID]
-            );
+            // Both stage tables, not just "File": publishing the same in-memory Image writes
+            // File_Live with the wrong class too, and this hook is the only chance to correct it.
+            // File_Live exists only when File is versioned, hence the check.
+            foreach (['File', 'File_Live'] as $table) {
+                if ($table !== 'File' && !DB::get_schema()->hasTable($table)) {
+                    continue;
+                }
+                DB::prepared_query(
+                    "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"ID\" = ?",
+                    [SVGImage::class, $owner->ID]
+                );
+            }
         }
     }
 }

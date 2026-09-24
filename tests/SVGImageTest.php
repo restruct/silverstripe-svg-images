@@ -300,4 +300,26 @@ class SVGImageTest extends SapphireTest
             'the unsanitized upload must not stay retrievable from the store'
         );
     }
+
+    /**
+     * Regression: the correction only updated the "File" (draft) table. Publishing the same
+     * in-memory Image then wrote File_Live with ClassName Image, and the correction ran again but
+     * again only on "File" - so the live site got a plain Image for an SVG.
+     */
+    public function testSvgPublishedAsImageIsSVGImageOnLiveToo(): void
+    {
+        // Same request, same in-memory Image instance: upload then publish, as a form that
+        // publishes on save does. The Live table must end up with SVGImage as well, or the
+        // published site serves a plain Image that core then tries to resample as a raster.
+        $image = Image::create();
+        $image->setFromString($this->referenceSVG(), 'svgtest/published.svg');
+        $image->write();
+        $image->publishSingle();
+
+        $liveClass = DB::prepared_query('SELECT "ClassName" FROM "File_Live" WHERE "ID" = ?', [$image->ID])->value();
+        $this->assertSame(SVGImage::class, $liveClass);
+
+        $live = Versioned::get_by_stage(File::class, Versioned::LIVE)->byID($image->ID);
+        $this->assertInstanceOf(SVGImage::class, $live);
+    }
 }
