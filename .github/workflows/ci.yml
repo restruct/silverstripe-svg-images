@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Check out the module
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: module
 
@@ -215,7 +215,7 @@ jobs:
         # The floor and the ceiling of the module's declared php constraint, as exercised above.
         php: ['8.1', '8.3', '8.4']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
