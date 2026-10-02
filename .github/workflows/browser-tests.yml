@@ -8,6 +8,11 @@
 # THIS branch serves: a target in targets.sh whose SS<n>_SRC_REF is empty (= "this checkout").
 # Targets served by another branch (e.g. SS5_SRC_REF="origin/v2" on main) are tested by that
 # branch's own copy of this workflow, so every major is tested once, on the code it ships.
+#
+# Optional hooks in targets.sh, honoured exactly as the local runner (tools/browser/lib.sh) does:
+#   SS<n>_EXTRA_REQUIRE  whitespace-separated vendor/pkg:constraint, added to the host's require
+#   BROWSER_ENV          newline-separated KEY=VALUE (test values only), written to $GITHUB_ENV
+#   tests/browser/fixtures/_config/*.yml  copied to the host's app/_config/browser-fixtures/
 name: Browser tests
 
 on:
@@ -152,6 +157,18 @@ jobs:
           JSON
           # block-insecure/advisories off: released SS4/SS5 cms versions sit under an advisory,
           # and this throwaway host is never deployed.
+          # Hook: SS<n>_EXTRA_REQUIRE from targets.sh (e.g. an editor module the fixtures need).
+          . module/tests/browser/targets.sh
+          extra_var="SS${{ matrix.major }}_EXTRA_REQUIRE"
+          for r in ${!extra_var:-}; do
+            case "$r" in
+              */*:*) ;;
+              *) echo "::error::$extra_var entry '$r' is not vendor/package:constraint"; exit 1 ;;
+            esac
+            jq --arg n "${r%%:*}" --arg v "${r#*:}" '.require[$n] = $v' app-host/composer.json > app-host/composer.tmp
+            mv app-host/composer.tmp app-host/composer.json
+            echo "extra require: ${r%%:*} ${r#*:}"
+          done
           composer update --working-dir=app-host --no-interaction --no-progress
 
       - name: Expose the module's client assets
@@ -172,9 +189,33 @@ jobs:
       - name: Copy the browser fixtures into the host
         # app/ is a module once it has a _config dir; dev mode loads the fixtures from there. In
         # the module they sit behind tests/browser/_manifest_exclude and never load.
+        # Fixture YAML (fixtures/_config) goes to app/_config/browser-fixtures: config is only read
+        # from a module root's _config dir (recursively), never from app/src.
         run: |
           mkdir -p app-host/app/_config app-host/app/src/BrowserFixtures
           cp -R module/tests/browser/fixtures/. app-host/app/src/BrowserFixtures/
+          rm -rf app-host/app/src/BrowserFixtures/_config
+          if [ -d module/tests/browser/fixtures/_config ]; then
+            mkdir -p app-host/app/_config/browser-fixtures
+            cp -R module/tests/browser/fixtures/_config/. app-host/app/_config/browser-fixtures/
+            ls -la app-host/app/_config/browser-fixtures
+          fi
+
+      - name: Apply BROWSER_ENV from targets.sh
+        # Test-only values (never real secrets), visible to the db build, php -S and the specs.
+        # Same validation as the local runner, which writes them single-quoted into the host .env.
+        run: |
+          . module/tests/browser/targets.sh
+          while IFS= read -r line; do
+            line="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            [ -n "$line" ] || continue
+            if ! printf '%s' "$line" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; then
+              echo "::error::BROWSER_ENV line '$line' is not KEY=VALUE"; exit 1
+            fi
+            case "${line#*=}" in *"'"*) echo "::error::BROWSER_ENV ${line%%=*}: single quotes are not supported"; exit 1 ;; esac
+            printf '%s\n' "$line" >> "$GITHUB_ENV"
+            echo "set ${line%%=*}"
+          done <<< "${BROWSER_ENV:-}"
 
       - name: Build the database
         working-directory: app-host
