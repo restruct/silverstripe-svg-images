@@ -122,6 +122,7 @@ jobs:
               <testsuites>
                   <testsuite name="svgimages">
                       <directory>vendor/restruct/silverstripe-svg-images/tests</directory>
+                      <exclude>vendor/restruct/silverstripe-svg-images/tests/browser</exclude>
                   </testsuite>
                   <testsuite name="consumer">
                       <directory>app/tests</directory>

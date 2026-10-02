@@ -1,0 +1,246 @@
+# MANAGED COPY - do not edit in the module. The canonical template lives in the maintainers'
+# workspace (tools/browser/ci/browser-tests.yml) and is written into every module, on every
+# branch, by tools/browser/ci/sync-ci.sh; `sync-ci.sh --check` reports any copy that has drifted.
+# This file is byte-identical everywhere: all module- and branch-specific input comes from
+# tests/browser/targets.sh.
+#
+# Playwright browser tests against a real Silverstripe CMS. One job per Silverstripe major that
+# THIS branch serves: a target in targets.sh whose SS<n>_SRC_REF is empty (= "this checkout").
+# Targets served by another branch (e.g. SS5_SRC_REF="origin/v2" on main) are tested by that
+# branch's own copy of this workflow, so every major is tested once, on the code it ships.
+name: Browser tests
+
+on:
+  push:
+    # Release lines only; feature branches are covered by their pull request.
+    branches: [main, master, 'v[0-9]*', '[0-9]*.x']
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref makes the running browser job pointless.
+concurrency:
+  group: browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targets:
+    name: Browser targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+      any: ${{ steps.read.outputs.any }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # targets.sh is all this job needs.
+          sparse-checkout: tests/browser/targets.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Read tests/browser/targets.sh
+        id: read
+        # targets.sh is plain bash assignments (it is also sourced by the local runner).
+        # Package name comes from composer.json in the browser job, not from here.
+        run: |
+          . tests/browser/targets.sh
+          matrix='[]'
+          for t in $BROWSER_TARGETS; do
+            major="${t#ss}"
+            ref_var="SS${major}_SRC_REF"; recipe_var="SS${major}_RECIPE"
+            php_var="SS${major}_PHP"; port_var="SS${major}_PORT"
+            # A non-empty ref means another branch serves this major: not ours to test.
+            if [ -n "${!ref_var:-}" ]; then
+              echo "skip $t: served by ${!ref_var}"
+              continue
+            fi
+            matrix="$(jq -c --arg t "$t" --arg m "$major" --arg r "${!recipe_var}" \
+              --arg p "${!php_var}" --arg port "${!port_var}" \
+              '. + [{target: $t, major: $m, recipe: $r, php: $p, port: $port}]' <<<"$matrix")"
+          done
+          echo "targets: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          [ "$matrix" != '[]' ] && echo "any=true" >> "$GITHUB_OUTPUT" || echo "any=false" >> "$GITHUB_OUTPUT"
+
+  browser:
+    name: Browser ${{ matrix.target }} / PHP ${{ matrix.php }}
+    needs: targets
+    if: needs.targets.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+
+    services:
+      database:
+        # Same database as the unit-test workflow: MariaDB matches local dev and the servers.
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: ss_browser
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    # Read by Silverstripe in every step (db build and php -S alike) instead of a .env file.
+    env:
+      SS_ENVIRONMENT_TYPE: dev
+      SS_DATABASE_CLASS: MySQLDatabase
+      SS_DATABASE_SERVER: 127.0.0.1
+      SS_DATABASE_PORT: 3306
+      SS_DATABASE_USERNAME: root
+      SS_DATABASE_PASSWORD: root
+      SS_DATABASE_NAME: ss_browser
+      # The specs log in through the real login form as this default admin (login.setup.ts).
+      SS_DEFAULT_ADMIN_USERNAME: admin
+      SS_DEFAULT_ADMIN_PASSWORD: admin
+
+    steps:
+      - name: Check out the module
+        uses: actions/checkout@v7
+        with:
+          path: module
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, intl, pdo_mysql, mysqli, gd, zip, dom, xml, tokenizer, simplexml, ctype, hash, session
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ matrix.target }}-php${{ matrix.php }}-${{ hashFiles('module/composer.json') }}
+          restore-keys: composer-${{ matrix.target }}-php${{ matrix.php }}-
+
+      - name: Build a host project
+        # Same recipe as the unit-test workflow: recipe-cms plus the module as a PATH repository,
+        # symlinked (tests/ is export-ignore, so a mirrored install would have no fixtures).
+        # The pinned version stops Composer guessing one from git, which fails on the detached
+        # checkout of a pull request.
+        run: |
+          pkg="$(jq -r .name module/composer.json)"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+          mkdir -p app-host
+          cat > app-host/composer.json <<JSON
+          {
+            "name": "restruct/browser-host",
+            "type": "project",
+            "require": {
+              "silverstripe/recipe-cms": "${{ matrix.recipe }}",
+              "$pkg": "dev-browser"
+            },
+            "repositories": [
+              { "type": "path", "url": "../module",
+                "options": { "symlink": true, "versions": { "$pkg": "dev-browser" } } }
+            ],
+            "minimum-stability": "dev",
+            "prefer-stable": true,
+            "config": {
+              "allow-plugins": true,
+              "audit": { "block-insecure": false },
+              "policy": { "advisories": { "block": false } }
+            },
+            "extra": { "resources-dir": "_resources" }
+          }
+          JSON
+          # block-insecure/advisories off: released SS4/SS5 cms versions sit under an advisory,
+          # and this throwaway host is never deployed.
+          composer update --working-dir=app-host --no-interaction --no-progress
+
+      - name: Expose the module's client assets
+        # vendor-plugin realpath()s a symlinked module that lives OUTSIDE the project and cuts
+        # the project root's length off it, so its expose links land in the wrong place and every
+        # module asset 404s. Link public/_resources/vendor/<pkg>/<dir> by hand, as the local
+        # runner does.
+        run: |
+          for dir in $(jq -r '.extra.expose[]? // empty' module/composer.json); do
+            mkdir -p "app-host/public/_resources/vendor/$PKG"
+            ln -sfn "$GITHUB_WORKSPACE/app-host/vendor/$PKG/$dir" "app-host/public/_resources/vendor/$PKG/$dir"
+            ls -la "app-host/public/_resources/vendor/$PKG/$dir/" | head -5
+          done
+
+      - name: Copy the browser fixtures into the host
+        # app/ is a module once it has a _config dir; dev mode loads the fixtures from there. In
+        # the module they sit behind tests/browser/_manifest_exclude and never load.
+        run: |
+          mkdir -p app-host/app/_config app-host/app/src/BrowserFixtures
+          cp -R module/tests/browser/fixtures/. app-host/app/src/BrowserFixtures/
+
+      - name: Build the database
+        working-directory: app-host
+        run: |
+          if [ "${{ matrix.major }}" -ge 6 ]; then
+            vendor/bin/sake db:build --flush
+          else
+            php vendor/silverstripe/framework/cli-script.php dev/build flush=1
+          fi
+
+      - name: Start php -S
+        # PHP_CLI_SERVER_WORKERS > 1 or the CMS deadlocks on its own parallel requests.
+        # Up = the login form renders; a bare 200 can still be a PHP error page.
+        run: |
+          PHP_CLI_SERVER_WORKERS=4 nohup php -S "127.0.0.1:${{ matrix.port }}" -t app-host/public \
+            module/tests/browser/router.php > php-s.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fs "http://127.0.0.1:${{ matrix.port }}/Security/login" | grep -q 'name="Email"'; then
+              echo "up after $i tries"; exit 0
+            fi
+            sleep 0.5
+          done
+          tail -30 php-s.log
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: module/tests/browser/package-lock.json
+
+      - name: Install the Playwright harness
+        working-directory: module/tests/browser
+        run: |
+          npm ci --no-audit --no-fund
+          echo "PW_VERSION=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_ENV"
+
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PW_VERSION }}-chromium
+
+      - name: Install Chromium
+        working-directory: module/tests/browser
+        # The browser comes from the cache when it can; its system libraries never are cached.
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Run the specs
+        working-directory: module/tests/browser
+        env:
+          BROWSER_TARGET_URLS: ${{ matrix.target }}=http://127.0.0.1:${{ matrix.port }}
+        run: npx playwright test
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-${{ matrix.target }}-results
+          path: |
+            module/tests/browser/test-results/
+            module/tests/browser/playwright-report/
+            php-s.log
+          retention-days: 7
+          if-no-files-found: ignore
