@@ -161,7 +161,10 @@ jobs:
         # runner does.
         run: |
           for dir in $(jq -r '.extra.expose[]? // empty' module/composer.json); do
-            mkdir -p "app-host/public/_resources/vendor/$PKG"
+            # "client/" -> "client" (ln on a path ending in / acts on the target), and create the
+            # parents of a nested entry such as client/dist.
+            dir="${dir%/}"
+            mkdir -p "$(dirname "app-host/public/_resources/vendor/$PKG/$dir")"
             ln -sfn "$GITHUB_WORKSPACE/app-host/vendor/$PKG/$dir" "app-host/public/_resources/vendor/$PKG/$dir"
             ls -la "app-host/public/_resources/vendor/$PKG/$dir/" | head -5
           done
