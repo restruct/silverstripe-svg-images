@@ -1,0 +1,14 @@
+{
+  "name": "svg-images-browser-tests",
+  "private": true,
+  "description": "Playwright browser tests for restruct/silverstripe-svg-images. Run through ~/Sites/0_ss-mods-maintenance/tools/browser/run.sh, which builds the scratch hosts and starts the servers.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,6 @@
+# Installed by npm ci in run.sh
+node_modules/
+# Playwright output: failure screenshots, traces, the HTML report, saved login state
+test-results/
+playwright-report/
+.auth/
