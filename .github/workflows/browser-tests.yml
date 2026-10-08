@@ -70,7 +70,9 @@ jobs:
     needs: targets
     if: needs.targets.outputs.any == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30, not 20: the install-deps step alone may take 17 minutes (3 attempts of 5), and the
+    # steps before it take ~5, so a lower job limit would cancel the last retry.
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
