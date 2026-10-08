@@ -261,15 +261,34 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ env.PW_VERSION }}-chromium
 
+      - name: Install Chromium system libraries
+        working-directory: module/tests/browser
+        # The system libraries are never cached and come from apt, whose runner mirror
+        # (azure.archive.ubuntu.com) can stall indefinitely: a stalled install once ate the whole
+        # 20-minute job before a single spec ran. So each attempt gets 5 minutes, up to 3 attempts,
+        # and from the second attempt on apt uses archive.ubuntu.com instead of the azure mirror.
+        # The sed only rewrites that one host and is a no-op when the file or host is absent.
+        # 3 x 300s + sleeps stays inside the step's 17 minutes.
+        timeout-minutes: 17
+        run: |
+          for attempt in 1 2 3; do
+            if timeout --kill-after=15 300 npx playwright install-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::playwright install-deps attempt $attempt failed or timed out"
+            [ "$attempt" = 3 ] && break
+            if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+              sudo sed -i 's#http://azure\.archive\.ubuntu\.com/#http://archive.ubuntu.com/#g' /etc/apt/sources.list.d/ubuntu.sources
+            fi
+            sleep 10
+          done
+          exit 1
+
       - name: Install Chromium
         working-directory: module/tests/browser
-        # The browser comes from the cache when it can; its system libraries never are cached.
-        run: |
-          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        # The browser comes from the cache when it can; the system libraries came in the step above.
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
       - name: Run the specs
         working-directory: module/tests/browser
