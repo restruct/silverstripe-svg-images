@@ -266,9 +266,8 @@ jobs:
         # The system libraries are never cached and come from apt, whose runner mirror
         # (azure.archive.ubuntu.com) can stall indefinitely: a stalled install once ate the whole
         # 20-minute job before a single spec ran. So each attempt gets 5 minutes, up to 3 attempts,
-        # and from the second attempt on apt uses archive.ubuntu.com instead of the azure mirror.
-        # The sed only rewrites that one host and is a no-op when the file or host is absent.
-        # 3 x 300s + sleeps stays inside the step's 17 minutes.
+        # and from the second attempt on apt skips the azure mirror.
+        # 3 x 300s + cleanup and sleeps stays inside the step's 17 minutes.
         timeout-minutes: 17
         run: |
           for attempt in 1 2 3; do
@@ -277,6 +276,24 @@ jobs:
             fi
             echo "::warning::playwright install-deps attempt $attempt failed or timed out"
             [ "$attempt" = 3 ] && break
+            # timeout only kills npx: the apt-get it started through sudo survives and keeps the
+            # dpkg lock, so the next attempt would fail at once ("Could not get lock"). Stop it
+            # (and its download methods; the [/] keeps the pattern from matching sudo's own
+            # command line), then let dpkg finish anything half-configured.
+            sudo pkill -TERM -x apt-get || true
+            sudo pkill -TERM -f '[/]usr/lib/apt/methods/' || true
+            for i in $(seq 1 20); do pgrep -x apt-get >/dev/null || break; sleep 1; done
+            sudo pkill -KILL -x apt-get || true
+            sudo dpkg --configure -a || true
+            # The runners resolve their archive through a mirror list (mirror+file:), with the
+            # azure mirror first. Drop the azure line so apt falls through to the next mirror, but
+            # only when another mirror remains; also rewrite a direct azure URI in the sources.
+            # Both edits are no-ops when the file or the host is absent.
+            m=/etc/apt/apt-mirrors.txt
+            if [ -f "$m" ] && grep -v 'azure\.archive\.ubuntu\.com' "$m" | grep -q '[^[:space:]]'; then
+              sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$m"
+            fi
+            [ -f "$m" ] && { echo "apt mirror list now:"; cat "$m"; }
             if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
               sudo sed -i 's#http://azure\.archive\.ubuntu\.com/#http://archive.ubuntu.com/#g' /etc/apt/sources.list.d/ubuntu.sources
             fi
