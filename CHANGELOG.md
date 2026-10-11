@@ -1,5 +1,60 @@
 # Changelog
 
+## 3.1.0 (2026-10-11)
+
+### Security
+
+- **SVGs the sanitizer cannot parse are refused instead of stored as uploaded (#23).** Such a file
+  skipped sanitizing entirely, and a browser opening its URL ran its script on the site's origin
+  (stored XSS for any role that can upload an SVG). Inputs that did this: an entity declared in the
+  DOCTYPE, nesting deeper than 256 levels, a non-`<svg>` root and a self-referencing `<use>` (the
+  last two made the sanitizer throw: a 500 with the bytes left in the store). They are now refused
+  during validation with a message in the Files area and in upload fields, and a
+  `ValidationException` for code that writes files. The refused bytes are deleted from the asset
+  store unless a record still references them, and the record keeps its previous file (with
+  validation switched off this holds for `SVGImage` records only; see the README). A DOCTYPE
+  with an internal subset is refused up front; this includes older Illustrator "Save As SVG"
+  exports. `sanitize_on_upload: false` still switches all of this off.
+- **Uppercase extensions (`logo.SVG`) were never sanitized.** Upload validation and the class
+  mapping lowercase the extension, so such a file became an `SVGImage`, but every SVG check in this
+  module compared the extension case-sensitively. All checks are now case-insensitive.
+- **A file renamed to `.svg` from another extension is now sanitized** (its hash does not change,
+  so it used to skip the check).
+- SVG responses now carry `Content-Security-Policy: default-src 'none'; style-src
+  'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened as a document
+  cannot run script even if the sanitizer misses something, or the file was stored before this
+  release. Sent for files Silverstripe streams through PHP (protected and draft files), and by the
+  generated `assets/.htaccess` on Apache (flush once to regenerate it). **Not covered without your
+  action:** nginx (add the nested location from the README), a project with its own `.htaccess`
+  template (add the README's `FilesMatch` block), and protected files served by another module such
+  as `restruct/silverstripe-signed-asset-urls` or an X-Sendfile/X-Accel offload.
+- **Publishing fails closed.** A draft SVG whose bytes are not what the sanitizer would store
+  (stored before sanitizing worked, or with `sanitize_on_upload` off) is refused: "This SVG was
+  stored before sanitising was added; replace or re-upload it to publish". Re-publishing a file Live
+  already serves unchanged is allowed, so pages that own it can still be published.
+- SVGs already in the asset store, and already published, are not re-sanitized or changed. The
+  README has a read-only snippet (`SVGImage::is_sanitize_stable()`) that lists them.
+
+### Fixed
+
+- **`Resampled()`, `ResizedImage()` and `Quality()` no longer hand SVGs to the raster image
+  backend (#24).** With Intervention's Imagick driver the SVG was rasterised on the server on every
+  render (following local file paths it names) and the failure was never cached. `Resampled()` and
+  `Quality()` now return the SVG, as the README already claimed, and `ResizedImage()` (used for
+  images resized in WYSIWYG content) returns an SVG variant of the requested size. `SVGImage` and
+  its variants always get a backend that cannot decode, and the module replaces core's
+  `ImageBackendFactory` service so a plain `Image` or `DBFile` holding an SVG gets one too (an SVG
+  uploaded into a `has_one Image` field made thumbnails through the raster backend before its
+  class was corrected). A site that sets its own `factory` for `Image_Backend`, or re-maps the
+  `ImageBackendFactory` service, keeps the trait's protection only; `dev/build` prints a notice
+  then.
+- `setAttribute()` on an SVG variant fatalled ("setOriginal() on null"), and with it every page
+  showing an SVG resized in WYSIWYG content. Variants now keep their original and its attributes,
+  as core's do.
+- Publishing a clean draft SVG no longer sanitizes it again during the Live write, which could
+  leave the published record pointing at a file in the protected store that visitors could not
+  load.
+
 ## 3.0.0 (2026-09-24)
 
 One line for Silverstripe 5 and 6 (PHP 8.1+), replacing both `1.x` (Silverstripe 4/5, branch

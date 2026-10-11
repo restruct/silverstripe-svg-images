@@ -15,9 +15,14 @@ import * as path from 'path';
  * error or throws an uncaught exception at any point (a broken thumbnail or variant URL arrives
  * as "Failed to load resource"). Warnings do not count.
  */
-export const test = base.extend<{ consoleGuard: void }>({
+export const test = base.extend<{ consoleGuard: void; allowedConsoleErrors: RegExp | null }>({
+    // A spec that provokes an error on purpose (a refused upload answers 4xx, which the browser
+    // logs as "Failed to load resource") matches exactly that error with this pattern, set with
+    // test.use(); anything else still fails the spec. One RegExp, not an array: Playwright would
+    // read an array given to test.use() as a [value, options] fixture tuple.
+    allowedConsoleErrors: [null, { option: true }],
     consoleGuard: [
-        async ({ page }, use, testInfo) => {
+        async ({ page, allowedConsoleErrors }, use, testInfo) => {
             const errors: string[] = [];
             page.on('console', (msg) => {
                 if (msg.type() === 'error') {
@@ -28,10 +33,11 @@ export const test = base.extend<{ consoleGuard: void }>({
 
             await use();
 
+            const unexpected = errors.filter((e) => !(allowedConsoleErrors && allowedConsoleErrors.test(e)));
             if (errors.length) {
                 await testInfo.attach('console-errors', { body: errors.join('\n'), contentType: 'text/plain' });
             }
-            expect(errors, 'no console errors or uncaught exceptions').toEqual([]);
+            expect(unexpected, 'no console errors or uncaught exceptions').toEqual([]);
         },
         { auto: true },
     ],

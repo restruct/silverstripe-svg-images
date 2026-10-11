@@ -28,7 +28,9 @@ trait SVGManipulationTrait
      */
     public function IsSVG(): bool
     {
-        return $this->getExtension() === 'svg';
+        # Case-insensitive: upload validation and class_for_file_extension lowercase the
+        # extension, so evil.SVG is accepted and becomes an SVGImage; it must be treated as one.
+        return SVGImage::is_svg_extension($this->getExtension());
     }
 
     /**
@@ -113,7 +115,7 @@ trait SVGManipulationTrait
             // Return SVGDBFile so chained manipulations continue to work
             /** @var SVGDBFile $file */
             $file = DBField::create_field(SVGDBFile::class, $tuple);
-            return $file;
+            return $this->linkVariantToOriginal($file);
         }
 
         // Check if generation is allowed
@@ -154,11 +156,29 @@ trait SVGManipulationTrait
             // Return SVGDBFile so chained manipulations continue to work
             /** @var SVGDBFile $file */
             $file = DBField::create_field(SVGDBFile::class, $tuple);
-            return $file;
+            return $this->linkVariantToOriginal($file);
         } catch (\Exception $e) {
             // Manipulation failed - return null to trigger graceful fallback
             return null;
         }
+    }
+
+    /**
+     * Give a variant what core's ImageManipulation::manipulate() gives its own: this object's
+     * HTML attributes, and this object as its original (the failover that answers Title, ID,
+     * File and so on).
+     *
+     * Without the original, setAttribute() on a variant fatals ("setOriginal() on null" in
+     * copyImageBackend(), which reaches the record's File through that failover), and core's
+     * ImageShortcodeProvider calls setAttribute() on the ResizedImage() of every image an editor
+     * resized in WYSIWYG content.
+     */
+    protected function linkVariantToOriginal(SVGDBFile $file): SVGDBFile
+    {
+        $file->initAttributes($this->attributes ?? []);
+        $file->setOriginal($this);
+
+        return $file;
     }
 
     /**
@@ -195,6 +215,29 @@ trait SVGManipulationTrait
         }
 
         return parent::getHeight();
+    }
+
+    /**
+     * An SVG never gets the site's raster Image_Backend, only an SVGImageBackend that cannot
+     * decode anything.
+     *
+     * Every core manipulation this trait does not override goes through
+     * ImageManipulation::manipulateImage(), which asks this method for a backend. With
+     * Intervention's Imagick driver that rasterised the SVG server-side on every render (#24).
+     * The backend is created here directly rather than through the Injector's Image_Backend
+     * service, so this holds for SVGImage and SVGDBFile even on a site that replaces that
+     * service's factory. Other objects holding an SVG (a plain Image or DBFile) are covered by
+     * SVGImageBackendFactory, as long as the site keeps core's factory service.
+     *
+     * @return \SilverStripe\Assets\Image_Backend|null
+     */
+    public function getImageBackend()
+    {
+        if ($this->IsSVG()) {
+            return SVGImageBackend::create($this);
+        }
+
+        return parent::getImageBackend();
     }
 
     // =========================================================================
@@ -679,6 +722,76 @@ trait SVGManipulationTrait
 
         return $this->manipulateSVG($variant, function ($image) use ($x, $y, $width, $height) {
             return $image->crop(new Point($x, $y), new Box($width, $height));
+        }) ?: $this;
+    }
+
+    /**
+     * Resampling re-encodes raster pixels; an SVG has none, so it is returned unchanged.
+     *
+     * Also what `Image.force_resample` reaches through updateURL() on every URL lookup, and what
+     * the README recommends for templates that mix SVGs and raster images.
+     *
+     * @return AssetContainer
+     */
+    public function Resampled()
+    {
+        if ($this->IsSVG()) {
+            return $this;
+        }
+
+        return parent::Resampled();
+    }
+
+    /**
+     * Encoder quality means nothing for a vector file, so the SVG is returned unchanged.
+     *
+     * @param int $quality
+     * @return AssetContainer|null
+     */
+    public function Quality($quality)
+    {
+        if ($this->IsSVG()) {
+            return $this;
+        }
+
+        return parent::Quality($quality);
+    }
+
+    /**
+     * Resize to exactly the given width and height.
+     *
+     * Core calls this from ImageShortcodeProvider whenever an image in WYSIWYG content is sized
+     * differently from the file, so an editor resizing an inserted SVG lands here. The variant
+     * gets the requested width/height; unlike core's raster version it is not skewed, because
+     * the viewBox is kept and the SVG's default preserveAspectRatio centres the drawing in that
+     * box (the same resize ScaleWidth()/ScaleHeight() use).
+     *
+     * @param int $width
+     * @param int $height
+     * @return AssetContainer|null
+     */
+    public function ResizedImage($width, $height)
+    {
+        if (!$this->IsSVG()) {
+            return parent::ResizedImage($width, $height);
+        }
+
+        if (!$this->isSVGManipulationEnabled()) {
+            return $this;
+        }
+
+        $width = (int)$width;
+        $height = (int)$height;
+
+        # Nothing to do, or nothing sensible to do: return the original rather than a copy
+        if ($width <= 0 || $height <= 0 || ($this->getWidth() === $width && $this->getHeight() === $height)) {
+            return $this;
+        }
+
+        $variant = $this->variantName(__FUNCTION__, $width, $height);
+
+        return $this->manipulateSVG($variant, function (\Contao\ImagineSvg\Image $image) use ($width, $height) {
+            return $image->resize(new Box($width, $height));
         }) ?: $this;
     }
 

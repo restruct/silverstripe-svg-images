@@ -72,7 +72,7 @@ class SVGImage extends Image
     #[Override]
     public function getFileType(): string
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return 'SVG image';
         }
 
@@ -85,6 +85,17 @@ class SVGImage extends Image
     #[Override]
     public function onBeforeWrite(): void
     {
+        # Refuse unsafe content BEFORE parent::onBeforeWrite(): that runs AssetControlExtension,
+        # which deletes the record's previous file as replaced. Normally validation has refused
+        # already (SVGImageExtension::updateValidate()); this covers writes with validation
+        # switched off (DataObject.validation_enabled: false, or SS6 write skipValidation), so an
+        # SVGImage whose replacement is refused keeps its previous file then too. Other File
+        # classes only have SVGImageExtension::onBeforeWrite(), which runs after that deletion.
+        $message = SVGImageExtension::unsafe_svg_message($this, false);
+        if ($message !== null) {
+            throw static::validation_exception($message);
+        }
+
         // Sanitization on upload happens in SVGImageExtension::onBeforeWrite(), which parent::
         // onBeforeWrite() invokes. It lives on the extension because SVGs uploaded through a
         // `has_one Image` relation are written as a plain Image, where an SVGImage override never
@@ -120,12 +131,19 @@ class SVGImage extends Image
      * unsanitized copy is removed from the asset store unless some record still references that
      * exact file (it cannot on a fresh upload, which is the case this exists for).
      *
+     * Fails closed: content that cannot be sanitized (see sanitize_content()) is refused with a
+     * ValidationException, and its bytes are removed from the asset store the same way. Up to 3.0
+     * such a file was kept exactly as uploaded, so a script the sanitizer never saw ran in the
+     * browser of whoever opened the file URL (#23).
+     *
      * @param File $file
      * @return bool True if the content was run through the sanitizer
+     * @throws \Exception A ValidationException (SilverStripe\ORM\ValidationException on
+     *                    Silverstripe 5, SilverStripe\Core\Validation\ValidationException on 6)
      */
     public static function sanitize_file(File $file): bool
     {
-        if ($file->getExtension() !== 'svg' || !$file->File->exists()) {
+        if (!static::is_svg_extension($file->getExtension()) || !$file->File->exists()) {
             return false;
         }
 
@@ -134,21 +152,24 @@ class SVGImage extends Image
             return false;
         }
 
-        $sanitizer = new Sanitizer();
-        $sanitizer->removeRemoteReferences((bool)static::config()->get('sanitize_remove_remote_references'));
+        $filename = $file->getFilename();
+        $dirtyHash = $file->getHash();
 
-        $cleanContent = $sanitizer->sanitize($content);
-
-        if ($cleanContent === false) {
-            // Sanitization failed - file may be malformed
-            return false;
+        try {
+            $cleanContent = static::sanitize_content(
+                $content,
+                (bool)static::config()->get('sanitize_remove_remote_references')
+            );
+        } catch (UnsafeSVGException $e) {
+            # Refused: nothing may keep serving these bytes. The record is never written (the
+            # exception aborts the write), but setFromString()/Upload already put the file in the
+            # store, where it would otherwise stay reachable by URL.
+            static::discard_unreferenced($filename, $dirtyHash);
+            throw static::validation_exception($e->getMessage());
         }
 
         // Only update if content changed
         if ($cleanContent !== $content) {
-            $filename = $file->getFilename();
-            $dirtyHash = $file->getHash();
-
             $file->setFromString($cleanContent, $filename);
 
             if ($dirtyHash && $dirtyHash !== $file->getHash() && !static::tuple_is_referenced($filename, $dirtyHash)) {
@@ -157,6 +178,182 @@ class SVGImage extends Image
         }
 
         return true;
+    }
+
+    /**
+     * Sanitize SVG markup, or refuse it.
+     *
+     * Refuses (throws) in two cases, both of which used to end with the input stored unchanged:
+     *
+     * - a DOCTYPE with an internal subset (`<!DOCTYPE svg [ ... ]>`). The sanitizer drops the
+     *   DOCTYPE before parsing, so any entity declared there becomes undefined and the parse
+     *   fails. Entity declarations are also how XML pulls in files and expands bombs, so they are
+     *   refused up front, with a message that says why. Older Illustrator "Save As SVG" exports
+     *   declare entities like this.
+     * - anything the sanitizer cannot parse (enshrined/svg-sanitize returns false), for example
+     *   nesting deeper than libxml's default limit of 256, which browsers render happily.
+     *
+     * @param string $content Raw SVG markup
+     * @param bool $removeRemoteReferences Passed to the sanitizer
+     * @return string The sanitized markup
+     * @throws UnsafeSVGException When the markup is refused; the message is meant for the uploader
+     */
+    public static function sanitize_content(string $content, bool $removeRemoteReferences = true): string
+    {
+        # Validation and onBeforeWrite() both check the same upload; parse it once per request
+        $key = sha1($content) . ($removeRemoteReferences ? ':r' : ':k');
+        if (array_key_exists($key, static::$sanitized)) {
+            if (static::$sanitized[$key] instanceof UnsafeSVGException) {
+                throw static::$sanitized[$key];
+            }
+            return static::$sanitized[$key];
+        }
+
+        try {
+            $result = static::sanitize_content_uncached($content, $removeRemoteReferences);
+        } catch (UnsafeSVGException $e) {
+            $result = $e;
+        }
+
+        # A handful is enough: entries are only reused within one write
+        if (count(static::$sanitized) >= 16) {
+            array_shift(static::$sanitized);
+        }
+        static::$sanitized[$key] = $result;
+
+        if ($result instanceof UnsafeSVGException) {
+            throw $result;
+        }
+        return $result;
+    }
+
+    /**
+     * @var array<string, string|UnsafeSVGException> Results of sanitize_content() by input
+     */
+    protected static $sanitized = [];
+
+    /**
+     * The work behind sanitize_content(), without the memo.
+     *
+     * @throws UnsafeSVGException
+     */
+    protected static function sanitize_content_uncached(string $content, bool $removeRemoteReferences): string
+    {
+        if (static::has_internal_subset($content)) {
+            throw new UnsafeSVGException(_t(
+                __CLASS__ . '.REFUSED_INTERNAL_SUBSET',
+                'This SVG declares entities in its DOCTYPE, which is not accepted for security reasons. '
+                . 'Export it again without editor data (in Illustrator: switch off "Preserve Illustrator '
+                . 'Editing Capabilities"), or use a PNG.'
+            ));
+        }
+
+        $sanitizer = new Sanitizer();
+        $sanitizer->removeRemoteReferences($removeRemoteReferences);
+        try {
+            $cleanContent = $sanitizer->sanitize($content);
+        } catch (\Throwable $e) {
+            # enshrined/svg-sanitize throws (LogicException) on some input instead of returning
+            # false, e.g. a non-<svg> root or a <use> that references its own ancestor. Treat
+            # that as "cannot be sanitized" too, so the caller refuses it and cleans the store
+            # instead of answering with a 500 and leaving the bytes behind.
+            $cleanContent = false;
+        }
+
+        # A root the sanitizer does not recognise as <svg> (e.g. a prefixed <s:svg>) comes back
+        # as an empty document. Storing that silently loses the file; refuse it with a reason.
+        if (is_string($cleanContent) && !preg_match('/<svg[\s>\/]/i', $cleanContent)) {
+            $cleanContent = false;
+        }
+
+        if ($cleanContent === false) {
+            throw new UnsafeSVGException(_t(
+                __CLASS__ . '.REFUSED_UNPARSABLE',
+                'This SVG could not be checked for unsafe content, so it was not saved. Export it '
+                . 'again from your editor, or use a PNG.'
+            ));
+        }
+
+        return $cleanContent;
+    }
+
+    /**
+     * Whether this markup is what the sanitizer would store: it passes and comes out unchanged.
+     *
+     * Every SVG stored since sanitizing works is sanitizer output, and sanitizing is idempotent,
+     * so false means "stored before sanitizing was added, or with sanitize_on_upload off". Used
+     * to refuse publishing such a draft, and handy for finding such files (see README).
+     */
+    public static function is_sanitize_stable(string $content, ?bool $removeRemoteReferences = null): bool
+    {
+        $removeRemoteReferences ??= (bool)static::config()->get('sanitize_remove_remote_references');
+        try {
+            return static::sanitize_content($content, $removeRemoteReferences) === $content;
+        } catch (UnsafeSVGException $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether a file extension is "svg", in any case.
+     *
+     * Upload_Validator and File::get_class_for_file_extension() both lowercase the extension, so
+     * "logo.SVG" is an accepted upload and becomes an SVGImage. Every SVG check in this module
+     * goes through here so such a file is sanitized and handled as an SVG too.
+     */
+    public static function is_svg_extension(?string $extension): bool
+    {
+        return strtolower((string)$extension) === 'svg';
+    }
+
+    /**
+     * Whether a filename ends in an svg extension, in any case.
+     */
+    public static function is_svg_filename(?string $filename): bool
+    {
+        return static::is_svg_extension(pathinfo((string)$filename, PATHINFO_EXTENSION));
+    }
+
+    /**
+     * Whether the markup has a DOCTYPE with an internal subset (`[ ... ]`).
+     *
+     * Walks the DOCTYPE's quoted literals instead of stopping at the first ">", so a ">" or "["
+     * inside a quoted public/system identifier cannot hide or fake a subset. Anything that slips
+     * past this still has to get through the sanitizer, which refuses what it cannot parse.
+     */
+    public static function has_internal_subset(string $content): bool
+    {
+        return (bool)preg_match(
+            '/<!DOCTYPE(?:\s+(?:"[^"]*"|\'[^\']*\'|[^\s"\'>\[]+))*\s*\[/i',
+            $content
+        );
+    }
+
+    /**
+     * A ValidationException, from whichever namespace this Silverstripe major has it in.
+     *
+     * Silverstripe 6 moved it from SilverStripe\ORM to SilverStripe\Core\Validation. Both accept a
+     * plain message, and DataObject::write() callers on both catch their own major's class.
+     */
+    public static function validation_exception(string $message): \Exception
+    {
+        $class = class_exists('SilverStripe\\Core\\Validation\\ValidationException')
+            ? 'SilverStripe\\Core\\Validation\\ValidationException'
+            : 'SilverStripe\\ORM\\ValidationException';
+
+        return new $class($message);
+    }
+
+    /**
+     * Delete a file from the asset store unless some File row (any stage or version) still
+     * references that exact filename and hash. Used for refused uploads: they must not stay
+     * reachable by URL, but a file an existing record still points at must stay.
+     */
+    public static function discard_unreferenced(?string $filename, ?string $hash): void
+    {
+        if ($filename && $hash && !static::tuple_is_referenced($filename, $hash)) {
+            Injector::inst()->get(AssetStore::class)->delete($filename, $hash);
+        }
     }
 
     /**
@@ -190,7 +387,7 @@ class SVGImage extends Image
      */
     public function getDimensions($dim = "string")
     {
-        if ($this->getExtension() !== 'svg' || !$this->exists()) {
+        if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
             return parent::getDimensions($dim);
         }
 
@@ -234,7 +431,7 @@ class SVGImage extends Image
      */
     public function getWidth(): int
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return (int)$this->getDimensions(0);
         }
 
@@ -248,7 +445,7 @@ class SVGImage extends Image
      */
     public function getHeight(): int
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return (int)$this->getDimensions(1);
         }
 
@@ -278,7 +475,7 @@ class SVGImage extends Image
      */
     public function ThumbnailURL($width, $height)
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             // Pass true to grant access for draft/protected files
             return $this->getURL(true);
         }
@@ -301,7 +498,7 @@ class SVGImage extends Image
      */
     public function existingOnly()
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             $result = SVGDBFile::createFromTuple([
                 'Filename' => $this->getFilename(),
                 'Hash' => $this->getHash(),
@@ -323,7 +520,7 @@ class SVGImage extends Image
     #[Override]
     public function PreviewLink($action = null): ?string
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             if (!$this->canView()) {
                 return null;
             }
@@ -347,6 +544,18 @@ class SVGImage extends Image
     public function requireDefaultRecords(): void
     {
         parent::requireDefaultRecords();
+
+        # A site that replaced the Image_Backend factory, or re-mapped the ImageBackendFactory
+        # service, sends plain Image/DBFile SVGs to the raster backend again (#24): say so
+        if (!SVGImageBackendFactory::is_active()) {
+            DB::alteration_message(
+                'svg-images: the Image_Backend service is not built by '
+                . SVGImageBackendFactory::class . ', so a plain Image holding an SVG (e.g. an upload '
+                . 'into a has_one Image field) can reach the raster image backend. See the '
+                . 'svg-images README (raster image backend).',
+                'notice'
+            );
+        }
 
         if (!static::config()->get('auto_migrate_svg_class')) {
             return;

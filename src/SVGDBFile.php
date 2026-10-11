@@ -64,7 +64,7 @@ class SVGDBFile extends DBFile
      */
     public function ThumbnailURL($width, $height)
     {
-        if ($this->getExtension() === 'svg') {
+        if (SVGImage::is_svg_extension($this->getExtension())) {
             return $this->getURL(true); // grant=true for protected access
         }
 
@@ -84,7 +84,7 @@ class SVGDBFile extends DBFile
     #[Override]
     public function Link(): string
     {
-        if ($this->getExtension() === 'svg') {
+        if (SVGImage::is_svg_extension($this->getExtension())) {
             return $this->getURL(true) ?: ''; // grant=true for protected access
         }
 

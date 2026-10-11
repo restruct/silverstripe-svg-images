@@ -3,7 +3,9 @@ import { test, expect, fetchSvg, naturalSize } from './support';
 // Vector manipulation: variants of a published SVG are SVG documents with new dimensions, served
 // publicly and rendered at the requested size by the browser.
 
-const VARIANTS = ['original', 'scalewidth', 'fill', 'fit', 'pad'] as const;
+const VARIANTS = ['original', 'scalewidth', 'fill', 'fit', 'pad', 'resized', 'resampled'] as const;
+// Resampled() returns the original SVG itself, not a variant file (#24).
+const ORIGINALS: readonly string[] = ['original', 'resampled'];
 
 test('SVG variants render at their requested sizes and stay vector', async ({ page }) => {
     const response = await page.goto('/svgb-page');
@@ -20,8 +22,10 @@ test('SVG variants render at their requested sizes and stay vector', async ({ pa
 
         // Served as SVG (not rasterised), with the new size in its root element.
         const src = (await img.getAttribute('src'))!;
-        if (name !== 'original') {
+        if (!ORIGINALS.includes(name)) {
             expect(src, `${name} is a variant file`).toMatch(/__[A-Za-z0-9]+\.svg$/);
+        } else {
+            expect(src, `${name} is the original file`).not.toMatch(/__[A-Za-z0-9]+\.svg$/);
         }
         const svg = await fetchSvg(page, src);
         expect(svg, `${name} keeps a viewBox`).toMatch(/viewBox=/);
