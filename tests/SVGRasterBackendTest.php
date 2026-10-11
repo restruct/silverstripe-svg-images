@@ -6,12 +6,15 @@ use Restruct\Silverstripe\SVG\SVGDBFile;
 use Restruct\Silverstripe\SVG\SVGImage;
 use Restruct\Silverstripe\SVG\SVGImageBackend;
 use Restruct\Silverstripe\SVG\Tests\Stub\RecordingImageBackend;
+use SilverStripe\AssetAdmin\Controller\AssetAdmin;
 use SilverStripe\Assets\File;
+use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Image_Backend;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
+use SilverStripe\ORM\FieldType\DBField;
 
 /**
  * #24: no SVG may ever reach the site's raster Image_Backend.
@@ -34,9 +37,14 @@ class SVGRasterBackendTest extends SapphireTest
         parent::setUp();
         $this->activateTestAssetStore();
 
-        # Every Image_Backend the code under test asks the Injector for is recorded
+        # Every Image_Backend the code under test asks the Injector for is recorded. Only the
+        # class is swapped: the configured spec (core's factory service, which this module
+        # replaces) stays, as it would on a site with its own backend class. Injector::load()
+        # replaces a whole spec, so start from the current one.
         RecordingImageBackend::$created_for = [];
-        Injector::inst()->load([Image_Backend::class => ['class' => RecordingImageBackend::class]]);
+        $spec = Injector::inst()->getServiceSpec(Image_Backend::class) ?: [];
+        $spec['class'] = RecordingImageBackend::class;
+        Injector::inst()->load([Image_Backend::class => $spec]);
     }
 
     protected function tearDown(): void
@@ -166,11 +174,74 @@ class SVGRasterBackendTest extends SapphireTest
         $this->assertSame('100x40', $this->sizeOf($resized));
     }
 
+    /**
+     * Uppercase extension: upload validation and class_for_file_extension lowercase it, so
+     * up.SVG is an accepted SVGImage; it must not be treated as a raster image.
+     */
+    public function testUppercaseSvgExtensionNeverReachesTheRasterBackend(): void
+    {
+        $svg = $this->makeSVG(null, 'upper.SVG');
+        $svg = SVGImage::get()->byID($svg->ID);
+
+        $this->assertTrue($svg->IsSVG());
+        $this->assertInstanceOf(SVGImageBackend::class, $svg->getImageBackend());
+        $this->assertSame('100x75', $this->sizeOf($svg->ScaleWidth(100)));
+        $this->assertSame($svg, $svg->Resampled());
+        $svg->FitMax(40, 40);
+        $this->assertNoSvgReachedTheRasterBackend();
+    }
+
+    /**
+     * The sequence asset-admin's UploadField runs for a has_one Image: FileUploadReceiver creates
+     * a plain Image through the Injector, Upload writes it, and the response is built by
+     * AssetAdmin::getObjectFromData(), which makes thumbnails through core's FitMax() - all
+     * before SVGImageExtension corrects the ClassName in the database. The in-memory object
+     * stays a plain Image, so only the Image_Backend factory can keep the SVG away from the
+     * raster backend here.
+     */
+    public function testUploadFieldResponseForAPlainImageNeverReachesTheRasterBackend(): void
+    {
+        if (!class_exists(AssetAdmin::class)) {
+            $this->markTestSkipped('silverstripe/asset-admin is not installed');
+        }
+
+        $image = Injector::inst()->create(Image::class);
+        $image->setFromString($this->referenceSVG(), 'svgtest/relation.svg');
+        $image->write();
+        $this->assertSame(Image::class, get_class($image), 'premise: still a plain Image in memory');
+
+        AssetAdmin::singleton()->getObjectFromData($image);
+        $image->FitMax(60, 60);
+        $image->ScaleWidth(30);
+
+        $this->assertInstanceOf(SVGImageBackend::class, $image->getImageBackend());
+        $this->assertNoSvgReachedTheRasterBackend();
+    }
+
+    /**
+     * A plain DBFile holding an SVG (e.g. a record's File field) goes through the same factory.
+     */
+    public function testAPlainDBFileHoldingAnSvgNeverReachesTheRasterBackend(): void
+    {
+        $svg = $this->makeSVG(null, 'dbfile.svg');
+        $dbFile = DBField::create_field('DBFile', [
+            'Filename' => $svg->getFilename(),
+            'Hash' => $svg->getHash(),
+        ]);
+
+        # Core gives a plain DBFile no backend at all for an SVG (image/svg+xml is not in
+        # DBFile.supported_images); either way it must never be the raster one
+        $backend = $dbFile->getImageBackend();
+        $this->assertTrue($backend === null || $backend instanceof SVGImageBackend);
+        $dbFile->ScaleWidth(20);
+        $this->assertNoSvgReachedTheRasterBackend();
+    }
+
     private function assertNoSvgReachedTheRasterBackend(): void
     {
         $svgs = array_filter(
             RecordingImageBackend::$created_for,
-            fn (string $filename) => strtolower(File::get_file_extension($filename)) === 'svg'
+            fn (string $filename) => SVGImage::is_svg_filename($filename)
         );
 
         $this->assertSame([], array_values($svgs), 'SVGs handed to the raster Image_Backend');

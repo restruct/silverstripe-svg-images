@@ -28,7 +28,9 @@ trait SVGManipulationTrait
      */
     public function IsSVG(): bool
     {
-        return $this->getExtension() === 'svg';
+        # Case-insensitive: upload validation and class_for_file_extension lowercase the
+        # extension, so evil.SVG is accepted and becomes an SVGImage; it must be treated as one.
+        return SVGImage::is_svg_extension($this->getExtension());
     }
 
     /**
@@ -113,7 +115,7 @@ trait SVGManipulationTrait
             // Return SVGDBFile so chained manipulations continue to work
             /** @var SVGDBFile $file */
             $file = DBField::create_field(SVGDBFile::class, $tuple);
-            return $file;
+            return $this->linkVariantToOriginal($file);
         }
 
         // Check if generation is allowed
@@ -154,11 +156,29 @@ trait SVGManipulationTrait
             // Return SVGDBFile so chained manipulations continue to work
             /** @var SVGDBFile $file */
             $file = DBField::create_field(SVGDBFile::class, $tuple);
-            return $file;
+            return $this->linkVariantToOriginal($file);
         } catch (\Exception $e) {
             // Manipulation failed - return null to trigger graceful fallback
             return null;
         }
+    }
+
+    /**
+     * Give a variant what core's ImageManipulation::manipulate() gives its own: this object's
+     * HTML attributes, and this object as its original (the failover that answers Title, ID,
+     * File and so on).
+     *
+     * Without the original, setAttribute() on a variant fatals ("setOriginal() on null" in
+     * copyImageBackend(), which reaches the record's File through that failover), and core's
+     * ImageShortcodeProvider calls setAttribute() on the ResizedImage() of every image an editor
+     * resized in WYSIWYG content.
+     */
+    protected function linkVariantToOriginal(SVGDBFile $file): SVGDBFile
+    {
+        $file->initAttributes($this->attributes ?? []);
+        $file->setOriginal($this);
+
+        return $file;
     }
 
     /**
@@ -201,11 +221,13 @@ trait SVGManipulationTrait
      * An SVG never gets the site's raster Image_Backend, only an SVGImageBackend that cannot
      * decode anything.
      *
-     * Every core manipulation this trait does not override (and any added upstream later) goes
-     * through ImageManipulation::manipulateImage(), which asks this method for a backend. With
+     * Every core manipulation this trait does not override goes through
+     * ImageManipulation::manipulateImage(), which asks this method for a backend. With
      * Intervention's Imagick driver that rasterised the SVG server-side on every render (#24).
-     * Not routed through the Injector on purpose: a site's Image_Backend config must not be able
-     * to put a rasteriser back.
+     * The backend is created here directly rather than through the Injector's Image_Backend
+     * service, so this holds for SVGImage and SVGDBFile even on a site that replaces that
+     * service's factory. Other objects holding an SVG (a plain Image or DBFile) are covered by
+     * SVGImageBackendFactory, as long as the site keeps core's factory service.
      *
      * @return \SilverStripe\Assets\Image_Backend|null
      */

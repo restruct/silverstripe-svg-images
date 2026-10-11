@@ -12,6 +12,7 @@ use SilverStripe\Assets\Upload_Validator;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
+use SilverStripe\Versioned\Versioned;
 
 /**
  * #23: an SVG the sanitizer cannot parse used to be stored exactly as uploaded, and browsers ran
@@ -172,6 +173,35 @@ class SVGUnsafeUploadTest extends SapphireTest
     }
 
     /**
+     * Same for a draft that was never published, where no other stage keeps the file alive.
+     * AssetControlExtension deletes a record's previous file in its onBeforeWrite(), so a
+     * refusal raised later in the write lost the original; the refusal now happens in
+     * validation, before any onBeforeWrite().
+     */
+    public function testRefusedReplacementOfAnUnpublishedDraftKeepsItsFile(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        $svg = $this->makeSVG(null, 'draft-only.svg', false);
+        $safeHash = $svg->getHash();
+
+        $svg->setFromString($this->entityPayload(), $svg->getFilename());
+        $thrown = null;
+        try {
+            $svg->write();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $stored = SVGImage::get()->byID($svg->ID);
+        $this->assertSame($safeHash, $stored->getHash());
+        $this->assertNotEmpty($stored->getString(), 'the original file is still in the store');
+        $this->assertFalse(
+            Injector::inst()->get(AssetStore::class)->exists($svg->getFilename(), sha1($this->entityPayload()))
+        );
+    }
+
+    /**
      * Control: a DOCTYPE without an internal subset, as many editors write it, is still accepted
      * and sanitized.
      */
@@ -231,5 +261,151 @@ class SVGUnsafeUploadTest extends SapphireTest
         $svg = $this->makeSVG($this->entityPayload(), 'entity-unsanitized.svg');
 
         $this->assertTrue($svg->isInDB());
+    }
+
+    # -------------------------------------------------------------------------
+    # Verifier round 1
+    # -------------------------------------------------------------------------
+
+    /**
+     * Upload_Validator and class_for_file_extension lowercase the extension, so evil.SVG is an
+     * accepted upload and an SVGImage. The sanitizer compared the extension case-sensitively and
+     * never ran for it.
+     */
+    public function testUppercaseExtensionIsSanitizedOnUpload(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'svgupload');
+        file_put_contents($tmp, '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10"/></svg>');
+        Config::modify()->set(Upload_Validator::class, 'use_is_uploaded_file', false);
+        $upload = Upload::create();
+        try {
+            $this->assertTrue($upload->loadIntoFile(
+                ['name' => 'evil.SVG', 'type' => 'image/svg+xml', 'tmp_name' => $tmp, 'size' => filesize($tmp), 'error' => UPLOAD_ERR_OK],
+                null,
+                'svgtest'
+            ), 'premise: an .SVG upload is accepted');
+        } finally {
+            @unlink($tmp);
+        }
+
+        $stored = File::get()->byID($upload->getFile()->ID);
+        $this->assertInstanceOf(SVGImage::class, $stored);
+        $this->assertStringNotContainsString('<script', $stored->getString());
+        $this->assertStringContainsString('<rect', $stored->getString());
+    }
+
+    public function testUppercaseExtensionIsRefusedLikeLowercase(): void
+    {
+        $this->assertRefused($this->entityPayload(), 'entity-upper.SVG');
+    }
+
+    /**
+     * enshrined/svg-sanitize throws a LogicException for the first two instead of returning
+     * false: a 500 with the bytes left in the store. A prefixed root comes back as an empty
+     * document, which used to be stored silently.
+     */
+    public function testInputTheSanitizerThrowsOnIsRefusedAndNotStored(): void
+    {
+        $selfUse = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><g id="a"><use href="#a"/></g><script>alert(1)</script></svg>';
+        $xhtmlRoot = '<html xmlns="http://www.w3.org/1999/xhtml"><body><script>alert(1)</script></body></html>';
+        $prefixedRoot = '<s:svg xmlns:s="http://www.w3.org/2000/svg" width="10" height="10"><s:script>alert(1)</s:script></s:svg>';
+
+        $this->assertRefused($selfUse, 'self-use.svg');
+        $this->assertRefused($xhtmlRoot, 'xhtml-root.svg');
+        $this->assertRefused($prefixedRoot, 'prefixed-root.svg');
+    }
+
+    /**
+     * Renaming notes.txt to notes.svg keeps the hash, so the "content changed" check never fired:
+     * the record became an SVGImage with whatever the text file held.
+     */
+    public function testRenamingAnotherFileToSvgSanitizesIt(): void
+    {
+        # Renames happen on the draft stage (File::updateFilesystem() skips Live)
+        Versioned::set_stage(Versioned::DRAFT);
+        $file = File::create();
+        $file->setFromString(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10"/></svg>',
+            'svgtest/notes.txt'
+        );
+        $file->write();
+
+        $file->Name = 'notes.svg';
+        $file->write();
+
+        $stored = File::get()->byID($file->ID);
+        $this->assertSame('svgtest/notes.svg', $stored->getFilename(), 'premise: renamed');
+        $this->assertStringNotContainsString('<script', $stored->getString());
+    }
+
+    public function testRenamingAnotherFileToSvgRefusesUnsafeContent(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        $file = File::create();
+        $file->setFromString($this->entityPayload(), 'svgtest/entity.txt');
+        $file->write();
+
+        $file->Name = 'entity.SVG';
+        $thrown = null;
+        try {
+            $file->write();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $this->assertSame('svgtest/entity.txt', File::get()->byID($file->ID)->getFilename(), 'the record keeps its old name');
+    }
+
+    /**
+     * Publishing copies the draft as it is. It used to re-sanitize during the Live-stage write
+     * (publish calls forceChange()), which left a pre-3.0 unsanitized draft published with a new
+     * file in the protected store: visitors could not load it.
+     */
+    public function testPublishingDoesNotRewriteTheFile(): void
+    {
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'pre-fix.svg',
+            false
+        );
+        $draftHash = $svg->getHash();
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $svg = SVGImage::get()->byID($svg->ID);
+        $svg->publishSingle();
+
+        $live = Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID);
+        $this->assertSame($draftHash, $live->getHash(), 'Live gets exactly the draft');
+        $this->assertSame(AssetStore::VISIBILITY_PUBLIC, $live->getVisibility());
+        $this->assertTrue(Injector::inst()->get(AssetStore::class)->exists($live->getFilename(), $live->getHash()));
+    }
+
+    /**
+     * Rolling the draft back to an unsafe version is new content for the draft: refused.
+     */
+    public function testRollingBackToAnUnsafeVersionIsRefused(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        # Published, so the unsafe file stays in the store after the draft moves on (an
+        # unpublished draft's replaced file is gone, and a rollback to it restores nothing)
+        $svg = $this->makeSVG($this->entityPayload(), 'rollback.svg', true);
+        $unsafeVersion = $svg->Version;
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $svg->setFromString($this->referenceSVG(), 'svgtest/rollback.svg');
+        $svg->write();
+
+        $thrown = null;
+        try {
+            $svg->rollbackSingle($unsafeVersion);
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $this->assertStringNotContainsString('<script', SVGImage::get()->byID($svg->ID)->getString());
     }
 }

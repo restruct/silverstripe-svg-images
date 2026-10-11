@@ -72,7 +72,7 @@ class SVGImage extends Image
     #[Override]
     public function getFileType(): string
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return 'SVG image';
         }
 
@@ -132,7 +132,7 @@ class SVGImage extends Image
      */
     public static function sanitize_file(File $file): bool
     {
-        if ($file->getExtension() !== 'svg' || !$file->File->exists()) {
+        if (!static::is_svg_extension($file->getExtension()) || !$file->File->exists()) {
             return false;
         }
 
@@ -153,9 +153,7 @@ class SVGImage extends Image
             # Refused: nothing may keep serving these bytes. The record is never written (the
             # exception aborts the write), but setFromString()/Upload already put the file in the
             # store, where it would otherwise stay reachable by URL.
-            if ($dirtyHash && !static::tuple_is_referenced($filename, $dirtyHash)) {
-                Injector::inst()->get(AssetStore::class)->delete($filename, $dirtyHash);
-            }
+            static::discard_unreferenced($filename, $dirtyHash);
             throw static::validation_exception($e->getMessage());
         }
 
@@ -191,6 +189,45 @@ class SVGImage extends Image
      */
     public static function sanitize_content(string $content, bool $removeRemoteReferences = true): string
     {
+        # Validation and onBeforeWrite() both check the same upload; parse it once per request
+        $key = sha1($content) . ($removeRemoteReferences ? ':r' : ':k');
+        if (array_key_exists($key, static::$sanitized)) {
+            if (static::$sanitized[$key] instanceof UnsafeSVGException) {
+                throw static::$sanitized[$key];
+            }
+            return static::$sanitized[$key];
+        }
+
+        try {
+            $result = static::sanitize_content_uncached($content, $removeRemoteReferences);
+        } catch (UnsafeSVGException $e) {
+            $result = $e;
+        }
+
+        # A handful is enough: entries are only reused within one write
+        if (count(static::$sanitized) >= 16) {
+            array_shift(static::$sanitized);
+        }
+        static::$sanitized[$key] = $result;
+
+        if ($result instanceof UnsafeSVGException) {
+            throw $result;
+        }
+        return $result;
+    }
+
+    /**
+     * @var array<string, string|UnsafeSVGException> Results of sanitize_content() by input
+     */
+    protected static $sanitized = [];
+
+    /**
+     * The work behind sanitize_content(), without the memo.
+     *
+     * @throws UnsafeSVGException
+     */
+    protected static function sanitize_content_uncached(string $content, bool $removeRemoteReferences): string
+    {
         if (static::has_internal_subset($content)) {
             throw new UnsafeSVGException(_t(
                 __CLASS__ . '.REFUSED_INTERNAL_SUBSET',
@@ -202,7 +239,21 @@ class SVGImage extends Image
 
         $sanitizer = new Sanitizer();
         $sanitizer->removeRemoteReferences($removeRemoteReferences);
-        $cleanContent = $sanitizer->sanitize($content);
+        try {
+            $cleanContent = $sanitizer->sanitize($content);
+        } catch (\Throwable $e) {
+            # enshrined/svg-sanitize throws (LogicException) on some input instead of returning
+            # false, e.g. a non-<svg> root or a <use> that references its own ancestor. Treat
+            # that as "cannot be sanitized" too, so the caller refuses it and cleans the store
+            # instead of answering with a 500 and leaving the bytes behind.
+            $cleanContent = false;
+        }
+
+        # A root the sanitizer does not recognise as <svg> (e.g. a prefixed <s:svg>) comes back
+        # as an empty document. Storing that silently loses the file; refuse it with a reason.
+        if (is_string($cleanContent) && !preg_match('/<svg[\s>\/]/i', $cleanContent)) {
+            $cleanContent = false;
+        }
 
         if ($cleanContent === false) {
             throw new UnsafeSVGException(_t(
@@ -213,6 +264,26 @@ class SVGImage extends Image
         }
 
         return $cleanContent;
+    }
+
+    /**
+     * Whether a file extension is "svg", in any case.
+     *
+     * Upload_Validator and File::get_class_for_file_extension() both lowercase the extension, so
+     * "logo.SVG" is an accepted upload and becomes an SVGImage. Every SVG check in this module
+     * goes through here so such a file is sanitized and handled as an SVG too.
+     */
+    public static function is_svg_extension(?string $extension): bool
+    {
+        return strtolower((string)$extension) === 'svg';
+    }
+
+    /**
+     * Whether a filename ends in an svg extension, in any case.
+     */
+    public static function is_svg_filename(?string $filename): bool
+    {
+        return static::is_svg_extension(pathinfo((string)$filename, PATHINFO_EXTENSION));
     }
 
     /**
@@ -246,6 +317,18 @@ class SVGImage extends Image
     }
 
     /**
+     * Delete a file from the asset store unless some File row (any stage or version) still
+     * references that exact filename and hash. Used for refused uploads: they must not stay
+     * reachable by URL, but a file an existing record still points at must stay.
+     */
+    public static function discard_unreferenced(?string $filename, ?string $hash): void
+    {
+        if ($filename && $hash && !static::tuple_is_referenced($filename, $hash)) {
+            Injector::inst()->get(AssetStore::class)->delete($filename, $hash);
+        }
+    }
+
+    /**
      * Whether any File row, on any stage or in the version history, points at this exact file.
      */
     protected static function tuple_is_referenced(string $filename, string $hash): bool
@@ -276,7 +359,7 @@ class SVGImage extends Image
      */
     public function getDimensions($dim = "string")
     {
-        if ($this->getExtension() !== 'svg' || !$this->exists()) {
+        if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
             return parent::getDimensions($dim);
         }
 
@@ -320,7 +403,7 @@ class SVGImage extends Image
      */
     public function getWidth(): int
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return (int)$this->getDimensions(0);
         }
 
@@ -334,7 +417,7 @@ class SVGImage extends Image
      */
     public function getHeight(): int
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             return (int)$this->getDimensions(1);
         }
 
@@ -364,7 +447,7 @@ class SVGImage extends Image
      */
     public function ThumbnailURL($width, $height)
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             // Pass true to grant access for draft/protected files
             return $this->getURL(true);
         }
@@ -387,7 +470,7 @@ class SVGImage extends Image
      */
     public function existingOnly()
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             $result = SVGDBFile::createFromTuple([
                 'Filename' => $this->getFilename(),
                 'Hash' => $this->getHash(),
@@ -409,7 +492,7 @@ class SVGImage extends Image
     #[Override]
     public function PreviewLink($action = null): ?string
     {
-        if ($this->getExtension() === 'svg') {
+        if (static::is_svg_extension($this->getExtension())) {
             if (!$this->canView()) {
                 return null;
             }

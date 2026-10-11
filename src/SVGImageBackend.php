@@ -2,6 +2,7 @@
 
 namespace Restruct\Silverstripe\SVG;
 
+use Contao\ImagineSvg\Imagine;
 use LogicException;
 use SilverStripe\Assets\Image_Backend;
 use SilverStripe\Assets\Storage\AssetContainer;
@@ -47,21 +48,53 @@ class SVGImageBackend implements Image_Backend
     }
 
     /**
-     * Width as the SVG itself reports it (viewBox or width attribute), never by decoding.
+     * @var int[]|null [width, height], read once from the SVG markup
+     */
+    protected $size = null;
+
+    /**
+     * Width as the SVG itself reports it (viewBox or width/height attributes), never by decoding.
      */
     public function getWidth(): int
     {
-        return $this->container ? (int)$this->container->getWidth() : 0;
+        return $this->getSize()[0];
     }
 
     public function getHeight(): int
     {
-        return $this->container ? (int)$this->container->getHeight() : 0;
+        return $this->getSize()[1];
+    }
+
+    /**
+     * Read the size from the markup, not from the container: on a plain Image or DBFile (which
+     * SVGImageBackendFactory also serves) the container's own getWidth() asks its backend, which
+     * is this object, and would recurse.
+     *
+     * @return int[]
+     */
+    protected function getSize(): array
+    {
+        if ($this->size !== null) {
+            return $this->size;
+        }
+
+        $this->size = [0, 0];
+        if ($this->container && $this->container->exists() && class_exists(Imagine::class)) {
+            try {
+                $box = (new Imagine())->load((string)$this->container->getString())->getSize();
+                $this->size = [(int)$box->getWidth(), (int)$box->getHeight()];
+            } catch (\Throwable $e) {
+                # Unreadable markup: report no size, as core does for an unreadable image
+            }
+        }
+
+        return $this->size;
     }
 
     public function loadFromContainer(AssetContainer $assetContainer): static
     {
         $this->container = $assetContainer;
+        $this->size = null;
         return $this;
     }
 

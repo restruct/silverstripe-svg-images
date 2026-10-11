@@ -41,6 +41,18 @@ SilverStripe\Assets\Flysystem\PublicAssetAdapter:
 #  SilverStripe\Assets\Image:
 #    class: Restruct\Silverstripe\SVG\SVGImage
 
+# An SVG must never reach the raster Image_Backend (#24). Core builds every Image_Backend through
+# the ImageBackendFactory service; this subclass hands SVG containers a backend that never
+# decodes. Covers plain Image/DBFile objects holding an SVG (an UploadField upload into a has_one
+# Image, before its ClassName is corrected); SVGImage/SVGDBFile also override getImageBackend().
+---
+Name: svgimagebackendfactory
+After: '#assetsimage'
+---
+SilverStripe\Core\Injector\Injector:
+  SilverStripe\Assets\ImageBackendFactory:
+    class: Restruct\Silverstripe\SVG\SVGImageBackendFactory
+
 ---
 Name: svgmimevalidator
 After: '#mimevalidator'
