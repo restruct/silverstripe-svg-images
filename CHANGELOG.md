@@ -27,8 +27,12 @@
   action:** nginx (add the nested location from the README), a project with its own `.htaccess`
   template (add the README's `FilesMatch` block), and protected files served by another module such
   as `restruct/silverstripe-signed-asset-urls` or an X-Sendfile/X-Accel offload.
-- SVGs already in the asset store are not re-sanitized; there is no task for it. Publishing copies
-  the draft as it is.
+- **Publishing fails closed.** A draft SVG whose bytes are not what the sanitizer would store
+  (stored before sanitizing worked, or with `sanitize_on_upload` off) is refused: "This SVG was
+  stored before sanitising was added; replace or re-upload it to publish". Re-publishing a file Live
+  already serves unchanged is allowed, so pages that own it can still be published.
+- SVGs already in the asset store, and already published, are not re-sanitized or changed. The
+  README has a read-only snippet (`SVGImage::is_sanitize_stable()`) that lists them.
 
 ### Fixed
 
@@ -45,9 +49,9 @@
 - `setAttribute()` on an SVG variant fatalled ("setOriginal() on null"), and with it every page
   showing an SVG resized in WYSIWYG content. Variants now keep their original and its attributes,
   as core's do.
-- Publishing a draft SVG no longer sanitizes it again during the Live write. For a draft stored
-  unsanitized before 3.0 that left the published record pointing at a file in the protected store,
-  which visitors could not load.
+- Publishing a clean draft SVG no longer sanitizes it again during the Live write, which could
+  leave the published record pointing at a file in the protected store that visitors could not
+  load.
 
 ## 3.0.0 (2026-09-24)
 

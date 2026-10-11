@@ -358,28 +358,112 @@ class SVGUnsafeUploadTest extends SapphireTest
     }
 
     /**
-     * Publishing copies the draft as it is. It used to re-sanitize during the Live-stage write
-     * (publish calls forceChange()), which left a pre-3.0 unsanitized draft published with a new
-     * file in the protected store: visitors could not load it.
+     * A clean draft publishes as it is: same file, public. Publishing used to re-sanitize during
+     * the Live-stage write (publish calls forceChange()), which left the Live record pointing at
+     * a new file in the protected store.
      */
-    public function testPublishingDoesNotRewriteTheFile(): void
+    public function testPublishingASanitizedDraftKeepsItsFileAndMakesItPublic(): void
     {
-        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        Versioned::set_stage(Versioned::DRAFT);
         $svg = $this->makeSVG(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
-            'pre-fix.svg',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10"/></svg>',
+            'clean-draft.svg',
             false
         );
         $draftHash = $svg->getHash();
-        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
 
-        $svg = SVGImage::get()->byID($svg->ID);
         $svg->publishSingle();
 
         $live = Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID);
         $this->assertSame($draftHash, $live->getHash(), 'Live gets exactly the draft');
         $this->assertSame(AssetStore::VISIBILITY_PUBLIC, $live->getVisibility());
         $this->assertTrue(Injector::inst()->get(AssetStore::class)->exists($live->getFilename(), $live->getHash()));
+    }
+
+    /**
+     * Fail closed: a draft stored before sanitizing worked (or with it switched off) may not be
+     * published, or publishing would put unsanitized markup on the public store.
+     */
+    public function testPublishingAnUnsanitizedDraftIsRefused(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'pre-fix.svg',
+            false
+        );
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $thrown = null;
+        try {
+            SVGImage::get()->byID($svg->ID)->publishSingle();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $this->assertStringContainsString('stored before sanitising', $thrown->getMessage());
+        $this->assertNull(Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID), 'not published');
+        $this->assertTrue(
+            Injector::inst()->get(AssetStore::class)->exists($svg->getFilename(), $svg->getHash()),
+            'the draft keeps its file (to be replaced by an editor)'
+        );
+    }
+
+    /**
+     * An unsafe draft that the sanitizer would refuse outright is refused for publishing too.
+     */
+    public function testPublishingAnUnsafeDraftIsRefused(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG($this->entityPayload(), 'pre-fix-entity.svg', false);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $thrown = null;
+        try {
+            SVGImage::get()->byID($svg->ID)->publishSingle();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $this->assertNull(Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID));
+    }
+
+    /**
+     * A file Live already serves unchanged may be published again: nothing new becomes public,
+     * and refusing would block every publish of a page that owns the image. Such files are left
+     * alone (the README shows how to find them).
+     */
+    public function testRepublishingAFileLiveAlreadyServesIsAllowed(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'already-live.svg',
+            true
+        );
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $svg = SVGImage::get()->byID($svg->ID);
+        $svg->Title = 'Renamed title';
+        $svg->write();
+        $svg->publishSingle();
+
+        $live = Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID);
+        $this->assertSame('Renamed title', $live->Title);
+    }
+
+    public function testSanitizeStableDetection(): void
+    {
+        $this->assertTrue(SVGImage::is_sanitize_stable(SVGImage::sanitize_content($this->referenceSVG())));
+        $this->assertFalse(SVGImage::is_sanitize_stable(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>'
+        ));
+        $this->assertFalse(SVGImage::is_sanitize_stable($this->entityPayload()));
     }
 
     /**

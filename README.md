@@ -123,8 +123,13 @@ or throws on (for example nesting deeper than 256 levels, a root element that is
 (`<!DOCTYPE svg [ ... ]>`). Older Illustrator "Save As SVG" exports do the latter; export again with
 "Preserve Illustrator Editing Capabilities" switched off. Code that writes such a file gets a
 `ValidationException` from `write()`. The extension is matched in any case (`logo.SVG` too), and a
-file renamed to `.svg` from another extension is checked like an upload. Publishing copies the draft
-as it is and does not sanitize again.
+file renamed to `.svg` from another extension is checked like an upload.
+
+Publishing fails closed: a draft SVG whose bytes are not what the sanitizer would store (stored
+before sanitizing worked, or while `sanitize_on_upload` was off) is refused with "This SVG was stored
+before sanitising was added; replace or re-upload it to publish". A clean draft is published as it
+is. Publishing again a file that Live already serves unchanged is allowed, so pages that own such an
+image can still be published; that file stays as it is (see below).
 
 > Up to 3.0.0, a file the sanitizer could not parse was stored exactly as uploaded, script included
 > (#23).
@@ -276,10 +281,32 @@ Check it with `curl -I https://example.com/assets/<some-file>.svg`.
 
 ### SVGs stored before the upgrade
 
-The module does not re-sanitize files that are already in the asset store, and has no task for it.
-Up to 3.0.0 a file the sanitizer could not parse was stored as uploaded, and before 3.0.0 nothing
-was sanitized at all (see [UPGRADING.md](UPGRADING.md)). The headers above protect those files when
-opened directly; if untrusted users could upload SVGs, review or re-upload them.
+The module does not re-sanitize files that are already in the asset store, and does not touch
+files that are already published. Up to 3.0.0 a file the sanitizer could not parse was stored as
+uploaded, and before 3.0.0 nothing was sanitized at all (see [UPGRADING.md](UPGRADING.md)). The
+headers above protect those files when opened directly, where they are sent. If untrusted users
+could upload SVGs, find them and replace or re-upload them. This lists every SVG, on either stage,
+whose stored bytes are not what the sanitizer would store (read-only; run it in a dev task, a
+`sake` script or a test console):
+
+```php
+use Restruct\Silverstripe\SVG\SVGImage;
+use SilverStripe\Assets\File;
+use SilverStripe\Versioned\Versioned;
+
+foreach ([Versioned::DRAFT, Versioned::LIVE] as $stage) {
+    $files = Versioned::get_by_stage(File::class, $stage)->filter('FileFilename:EndsWith:nocase', '.svg');
+    foreach ($files as $file) {
+        $content = $file->File->exists() ? $file->File->getString() : null;
+        if ($content !== null && !SVGImage::is_sanitize_stable($content)) {
+            echo "{$stage}\t#{$file->ID}\t{$file->getFilename()}\n";
+        }
+    }
+}
+```
+
+To fix one, replace the file in the CMS (or re-upload it) and publish: the new upload is
+sanitized, or refused with a reason.
 
 For more information on SVG security risks, see [OWASP SVG Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SVG_Security_Cheat_Sheet.html).
 

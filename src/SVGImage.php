@@ -267,6 +267,23 @@ class SVGImage extends Image
     }
 
     /**
+     * Whether this markup is what the sanitizer would store: it passes and comes out unchanged.
+     *
+     * Every SVG stored since sanitizing works is sanitizer output, and sanitizing is idempotent,
+     * so false means "stored before sanitizing was added, or with sanitize_on_upload off". Used
+     * to refuse publishing such a draft, and handy for finding such files (see README).
+     */
+    public static function is_sanitize_stable(string $content, ?bool $removeRemoteReferences = null): bool
+    {
+        $removeRemoteReferences ??= (bool)static::config()->get('sanitize_remove_remote_references');
+        try {
+            return static::sanitize_content($content, $removeRemoteReferences) === $content;
+        } catch (UnsafeSVGException $e) {
+            return false;
+        }
+    }
+
+    /**
      * Whether a file extension is "svg", in any case.
      *
      * Upload_Validator and File::get_class_for_file_extension() both lowercase the extension, so

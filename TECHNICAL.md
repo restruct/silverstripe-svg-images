@@ -267,10 +267,14 @@ What counts as new content: the first write, a changed `FileHash`, and a rename 
 extension to `.svg` (`Name` changed during validation, `FileFilename` changed in `onBeforeWrite()`,
 after `File::updateFilesystem()`). Extensions are compared case-insensitively
 (`SVGImage::is_svg_extension()`), because core lowercases them for validation and class mapping.
-The Live write of a publish is skipped: `Versioned::writeToStage()` calls `forceChange()`, which
-flags `FileHash` as changed, and the module marks that write through the `onBeforeWriteToStage`/
-`onAfterWriteToStage` hooks. It is deliberately not "current stage is Live", because front-end
-requests write in Live mode.
+The Live write of a publish is not sanitized (`Versioned::writeToStage()` calls `forceChange()`,
+which flags `FileHash` as changed; re-sanitizing there wrote the cleaned copy to the protected store
+under a Live record). Instead it is checked in validation: unless Live already serves the same
+filename and hash, the draft's bytes must be sanitize-stable (`SVGImage::is_sanitize_stable()`:
+the sanitizer accepts them and returns them unchanged; sanitizing is idempotent) or the publish is
+refused. The module marks that write through the `onBeforeWriteToStage`/`onAfterWriteToStage`
+hooks. It is deliberately not "current stage is Live", because front-end requests write in Live
+mode.
 
 ## SVGs and the raster image backend
 

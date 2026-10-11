@@ -62,7 +62,16 @@ class SVGImageExtension extends Extension
         /** @var File $owner */
         $owner = $this->getOwner();
 
-        if (!SVGImage::config()->get('sanitize_on_upload') || !$this->receivesSvgContent($owner, false)) {
+        if (!SVGImage::config()->get('sanitize_on_upload')) {
+            return;
+        }
+
+        if ($this->isPublishWrite($owner)) {
+            $this->refuseUnsanitizedPublish($owner, $result);
+            return;
+        }
+
+        if (!$this->receivesSvgContent($owner, false)) {
             return;
         }
 
@@ -81,6 +90,43 @@ class SVGImageExtension extends Extension
             SVGImage::discard_unreferenced($owner->File->getFilename(), $owner->File->getHash());
             $result->addError($e->getMessage());
         }
+    }
+
+    /**
+     * Fail closed on publish: a draft SVG whose bytes are not what the sanitizer would store
+     * (stored before sanitizing worked, or with sanitize_on_upload off at the time) may not be
+     * published, or publishing would put unsanitized markup on the public store.
+     *
+     * The publish is allowed when Live already serves exactly this file (same filename and
+     * hash): nothing new becomes public, and refusing would block every page publish that
+     * re-publishes the image it owns. Such already-public files are not touched; the README
+     * shows how to find them.
+     */
+    protected function refuseUnsanitizedPublish(File $owner, $result): void
+    {
+        if (!SVGImage::is_svg_filename($owner->getFilename()) || !$owner->File->exists()) {
+            return;
+        }
+
+        if (DB::get_schema()->hasTable('File_Live')) {
+            $live = DB::prepared_query(
+                'SELECT "FileFilename", "FileHash" FROM "File_Live" WHERE "ID" = ?',
+                [$owner->ID]
+            )->record();
+            if ($live && $live['FileFilename'] === $owner->getFilename() && $live['FileHash'] === $owner->getHash()) {
+                return;
+            }
+        }
+
+        $content = $owner->File->getString();
+        if ($content === null || $content === '' || SVGImage::is_sanitize_stable($content)) {
+            return;
+        }
+
+        $result->addError(_t(
+            SVGImage::class . '.REFUSED_PUBLISH_UNSANITIZED',
+            'This SVG was stored before sanitising was added; replace or re-upload it to publish.'
+        ));
     }
 
     /**
@@ -164,8 +210,8 @@ class SVGImageExtension extends Extension
     }
 
     /**
-     * The Live-stage write of a publish: it copies the draft as it is, so there is nothing new to
-     * sanitize.
+     * The Live-stage write of a publish: it copies the draft as it is, so it is not sanitized
+     * again (refuseUnsanitizedPublish() checks it in validation instead).
      *
      * Publishing goes through writeToStage(), which calls forceChange(): FileHash is flagged as
      * changed without changing. Without this the file was sanitized again during the Live write.
