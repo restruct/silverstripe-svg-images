@@ -12,6 +12,7 @@ use SilverStripe\Assets\Upload_Validator;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\Versioned\Versioned;
 
 /**
@@ -491,5 +492,104 @@ class SVGUnsafeUploadTest extends SapphireTest
 
         $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
         $this->assertStringNotContainsString('<script', SVGImage::get()->byID($svg->ID)->getString());
+    }
+
+    /**
+     * The already-live exception compares the hash, not only the filename: a dirty draft swapped
+     * in under the same filename as a dirty file Live serves is new content, and is refused.
+     */
+    public function testPublishingADifferentDirtyFileUnderTheLiveFilenameIsRefused(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'swap.svg',
+            true
+        );
+        $liveHash = $svg->getHash();
+        $svg->setFromString(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(2)</script></svg>',
+            $svg->getFilename()
+        );
+        $svg->write();
+        $this->assertNotSame($liveHash, $svg->getHash(), 'premise: the draft has other bytes');
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+
+        $thrown = null;
+        try {
+            SVGImage::get()->byID($svg->ID)->publishSingle();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $live = Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID);
+        $this->assertSame($liveHash, $live->getHash(), 'Live stays on the file it served');
+    }
+
+    # -------------------------------------------------------------------------
+    # Validation switched off: the onBeforeWrite() backstops
+    # -------------------------------------------------------------------------
+
+    private function disableValidation(): void
+    {
+        Config::modify()->set(DataObject::class, 'validation_enabled', false);
+    }
+
+    public function testUploadIsRefusedWithValidationSwitchedOff(): void
+    {
+        $this->disableValidation();
+
+        $this->assertRefused($this->entityPayload(), 'novalidation.svg');
+        $this->assertRefused($this->deepPayload(), 'novalidation-image.svg', Image::class);
+    }
+
+    /**
+     * SVGImage refuses in its own onBeforeWrite(), before AssetControlExtension deletes the
+     * replaced file, so the record keeps its file without validation too.
+     */
+    public function testRefusedReplacementKeepsTheFileWithValidationSwitchedOff(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        $this->disableValidation();
+        $svg = $this->makeSVG(null, 'novalidation-draft.svg', false);
+        $safeHash = $svg->getHash();
+
+        $svg->setFromString($this->entityPayload(), $svg->getFilename());
+        $thrown = null;
+        try {
+            $svg->write();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $stored = SVGImage::get()->byID($svg->ID);
+        $this->assertSame($safeHash, $stored->getHash());
+        $this->assertNotEmpty($stored->getString(), 'the original file is still in the store');
+    }
+
+    public function testPublishingAnUnsanitizedDraftIsRefusedWithValidationSwitchedOff(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>',
+            'novalidation-pre-fix.svg',
+            false
+        );
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', true);
+        $this->disableValidation();
+
+        $thrown = null;
+        try {
+            SVGImage::get()->byID($svg->ID)->publishSingle();
+        } catch (\Exception $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf($this->validationExceptionClass(), $thrown);
+        $this->assertNull(Versioned::get_by_stage(SVGImage::class, Versioned::LIVE)->byID($svg->ID));
     }
 }

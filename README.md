@@ -73,8 +73,11 @@ that cannot decode anything, so they return no variant. With the Imagick driver,
 otherwise be rasterised on the server, following any local file path it names. This covers
 `SVGImage` and its variants always, and a plain `Image` or `DBFile` holding an SVG (an upload into a
 `has_one Image` field, before its class is corrected) through the module's replacement of core's
-`ImageBackendFactory` service. A site that configures its own `factory` for the `Image_Backend`
-service bypasses that replacement for plain `Image`/`DBFile` objects.
+`ImageBackendFactory` service. Two kinds of project config bypass that replacement for plain
+`Image`/`DBFile` objects: giving the `Image_Backend` service its own `factory`, or re-mapping the
+`SilverStripe\Assets\ImageBackendFactory` service to another class. A project that needs either
+should extend `Restruct\Silverstripe\SVG\SVGImageBackendFactory` instead. `dev/build` prints a
+notice when the `Image_Backend` service is not built by that factory.
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
 
@@ -122,7 +125,11 @@ or throws on (for example nesting deeper than 256 levels, a root element that is
 `<use>` that references its own ancestor) and any file that declares entities in its DOCTYPE
 (`<!DOCTYPE svg [ ... ]>`). Older Illustrator "Save As SVG" exports do the latter; export again with
 "Preserve Illustrator Editing Capabilities" switched off. Code that writes such a file gets a
-`ValidationException` from `write()`. The extension is matched in any case (`logo.SVG` too), and a
+`ValidationException` from `write()`. A refused replacement leaves the record with its previous
+file while validation is enabled (the default), and always for `SVGImage` records. With validation
+switched off (`DataObject.validation_enabled: false`, or Silverstripe 6's `skipValidation`), a plain
+`Image`/`File` record holding an SVG can lose its previous file: core's `AssetControlExtension`
+deletes it as replaced before the module's own `onBeforeWrite()` refuses the new one. The extension is matched in any case (`logo.SVG` too), and a
 file renamed to `.svg` from another extension is checked like an upload.
 
 Publishing fails closed: a draft SVG whose bytes are not what the sanitizer would store (stored
@@ -262,6 +269,12 @@ Where the headers come from, and where they do **not** unless you add them:
 location ^~ /assets/ {
     sendfile on;
     try_files $uri /index.php?$query_string;
+
+    # Dotfiles (.htaccess, .protected/) stay private; the ^~ prefix also stops a server-level
+    # deny rule from matching here, so repeat it first inside this block
+    location ~ /\. {
+        deny all;
+    }
 
     location ~* \.svg$ {
         add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox" always;

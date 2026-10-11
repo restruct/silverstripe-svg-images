@@ -5,13 +5,16 @@ namespace Restruct\Silverstripe\SVG\Tests;
 use Restruct\Silverstripe\SVG\SVGDBFile;
 use Restruct\Silverstripe\SVG\SVGImage;
 use Restruct\Silverstripe\SVG\SVGImageBackend;
+use Restruct\Silverstripe\SVG\SVGImageBackendFactory;
 use Restruct\Silverstripe\SVG\Tests\Stub\RecordingImageBackend;
 use SilverStripe\AssetAdmin\Controller\AssetAdmin;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Image_Backend;
+use SilverStripe\Assets\ImageBackendFactory;
 use SilverStripe\Assets\Storage\AssetContainer;
 use SilverStripe\Core\Config\Config;
+use SilverStripe\Core\Injector\InjectionCreator;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\ORM\FieldType\DBField;
@@ -235,6 +238,34 @@ class SVGRasterBackendTest extends SapphireTest
         $this->assertTrue($backend === null || $backend instanceof SVGImageBackend);
         $dbFile->ScaleWidth(20);
         $this->assertNoSvgReachedTheRasterBackend();
+    }
+
+    /**
+     * The dev/build notice relies on this: active by default, inactive when a project re-maps
+     * the ImageBackendFactory service or gives Image_Backend its own factory.
+     */
+    public function testFactoryActivityIsDetected(): void
+    {
+        $this->assertTrue(SVGImageBackendFactory::is_active(), 'active with the module config');
+
+        Injector::inst()->load([ImageBackendFactory::class => [
+            'class' => ImageBackendFactory::class,
+            'constructor' => ['creator' => '%$' . InjectionCreator::class],
+        ]]);
+        $this->assertFalse(SVGImageBackendFactory::is_active(), 're-mapped factory service');
+    }
+
+    public function testOwnImageBackendFactoryIsDetected(): void
+    {
+        Injector::inst()->load(['App\\OwnImageBackendFactory' => [
+            'class' => ImageBackendFactory::class,
+            'constructor' => ['creator' => '%$' . InjectionCreator::class],
+        ]]);
+        $spec = Injector::inst()->getServiceSpec(Image_Backend::class) ?: [];
+        $spec['factory'] = '%$App\\OwnImageBackendFactory';
+        Injector::inst()->load([Image_Backend::class => $spec]);
+
+        $this->assertFalse(SVGImageBackendFactory::is_active());
     }
 
     private function assertNoSvgReachedTheRasterBackend(): void

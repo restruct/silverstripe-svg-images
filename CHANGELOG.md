@@ -11,7 +11,8 @@
   last two made the sanitizer throw: a 500 with the bytes left in the store). They are now refused
   during validation with a message in the Files area and in upload fields, and a
   `ValidationException` for code that writes files. The refused bytes are deleted from the asset
-  store unless a record still references them, and the record keeps its previous file. A DOCTYPE
+  store unless a record still references them, and the record keeps its previous file (with
+  validation switched off this holds for `SVGImage` records only; see the README). A DOCTYPE
   with an internal subset is refused up front; this includes older Illustrator "Save As SVG"
   exports. `sanitize_on_upload: false` still switches all of this off.
 - **Uppercase extensions (`logo.SVG`) were never sanitized.** Upload validation and the class
@@ -44,8 +45,9 @@
   its variants always get a backend that cannot decode, and the module replaces core's
   `ImageBackendFactory` service so a plain `Image` or `DBFile` holding an SVG gets one too (an SVG
   uploaded into a `has_one Image` field made thumbnails through the raster backend before its
-  class was corrected). A site that sets its own `factory` for `Image_Backend` keeps the trait's
-  protection only.
+  class was corrected). A site that sets its own `factory` for `Image_Backend`, or re-maps the
+  `ImageBackendFactory` service, keeps the trait's protection only; `dev/build` prints a notice
+  then.
 - `setAttribute()` on an SVG variant fatalled ("setOriginal() on null"), and with it every page
   showing an SVG resized in WYSIWYG content. Variants now keep their original and its attributes,
   as core's do.

@@ -5,6 +5,7 @@ namespace Restruct\Silverstripe\SVG;
 use SilverStripe\Assets\Image_Backend;
 use SilverStripe\Assets\ImageBackendFactory;
 use SilverStripe\Assets\Storage\AssetContainer;
+use SilverStripe\Core\Injector\Injector;
 
 /**
  * Replaces core's ImageBackendFactory (the factory of the Image_Backend service): any container
@@ -39,6 +40,26 @@ class SVGImageBackendFactory extends ImageBackendFactory
         }
 
         return parent::create($service, $params);
+    }
+
+    /**
+     * Whether the Image_Backend service is actually built by this factory.
+     *
+     * A site can bypass it two ways: by giving the Image_Backend service its own `factory`, or by
+     * re-mapping the ImageBackendFactory service to another class. Either way plain Image and
+     * DBFile objects holding an SVG reach the raster backend again (SVGImage and SVGDBFile stay
+     * covered by SVGManipulationTrait). SVGImage::requireDefaultRecords() reports it on dev/build.
+     */
+    public static function is_active(): bool
+    {
+        $spec = Injector::inst()->getServiceSpec(Image_Backend::class) ?: [];
+        $factory = $spec['factory'] ?? null;
+        if (is_string($factory)) {
+            # Specs from YAML reference services as '%$Name'
+            $factory = Injector::inst()->get(preg_replace('/^%\$/', '', $factory));
+        }
+
+        return $factory instanceof self;
     }
 
     /**

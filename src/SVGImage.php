@@ -85,6 +85,17 @@ class SVGImage extends Image
     #[Override]
     public function onBeforeWrite(): void
     {
+        # Refuse unsafe content BEFORE parent::onBeforeWrite(): that runs AssetControlExtension,
+        # which deletes the record's previous file as replaced. Normally validation has refused
+        # already (SVGImageExtension::updateValidate()); this covers writes with validation
+        # switched off (DataObject.validation_enabled: false, or SS6 write skipValidation), so an
+        # SVGImage whose replacement is refused keeps its previous file then too. Other File
+        # classes only have SVGImageExtension::onBeforeWrite(), which runs after that deletion.
+        $message = SVGImageExtension::unsafe_svg_message($this, false);
+        if ($message !== null) {
+            throw static::validation_exception($message);
+        }
+
         // Sanitization on upload happens in SVGImageExtension::onBeforeWrite(), which parent::
         // onBeforeWrite() invokes. It lives on the extension because SVGs uploaded through a
         // `has_one Image` relation are written as a plain Image, where an SVGImage override never
@@ -324,7 +335,7 @@ class SVGImage extends Image
      * Silverstripe 6 moved it from SilverStripe\ORM to SilverStripe\Core\Validation. Both accept a
      * plain message, and DataObject::write() callers on both catch their own major's class.
      */
-    protected static function validation_exception(string $message): \Exception
+    public static function validation_exception(string $message): \Exception
     {
         $class = class_exists('SilverStripe\\Core\\Validation\\ValidationException')
             ? 'SilverStripe\\Core\\Validation\\ValidationException'
@@ -533,6 +544,18 @@ class SVGImage extends Image
     public function requireDefaultRecords(): void
     {
         parent::requireDefaultRecords();
+
+        # A site that replaced the Image_Backend factory, or re-mapped the ImageBackendFactory
+        # service, sends plain Image/DBFile SVGs to the raster backend again (#24): say so
+        if (!SVGImageBackendFactory::is_active()) {
+            DB::alteration_message(
+                'svg-images: the Image_Backend service is not built by '
+                . SVGImageBackendFactory::class . ', so a plain Image holding an SVG (e.g. an upload '
+                . 'into a has_one Image field) can reach the raster image backend. See the '
+                . 'svg-images README (raster image backend).',
+                'notice'
+            );
+        }
 
         if (!static::config()->get('auto_migrate_svg_class')) {
             return;

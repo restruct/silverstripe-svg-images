@@ -59,37 +59,53 @@ class SVGImageExtension extends Extension
 
     protected function refuseUnsafeSvg($result): void
     {
-        /** @var File $owner */
-        $owner = $this->getOwner();
+        $message = static::unsafe_svg_message($this->getOwner(), false);
+        if ($message !== null) {
+            $result->addError($message);
+        }
+    }
 
+    /**
+     * Why this write must be refused, or null when it may go ahead.
+     *
+     * Shared by validation (updateValidate()/validate()), SVGImage::onBeforeWrite() (before
+     * AssetControlExtension can delete a replaced file, for writes with validation switched off)
+     * and this extension's onBeforeWrite() (the backstop for any File class). Refused upload bytes
+     * are discarded from the store unless a record references them.
+     *
+     * @param bool $filesystemUpdated See receivesSvgContent()
+     */
+    public static function unsafe_svg_message(File $owner, bool $filesystemUpdated): ?string
+    {
         if (!SVGImage::config()->get('sanitize_on_upload')) {
-            return;
+            return null;
         }
 
-        if ($this->isPublishWrite($owner)) {
-            $this->refuseUnsanitizedPublish($owner, $result);
-            return;
+        if (static::isPublishWrite($owner)) {
+            return static::unsanitizedPublishMessage($owner);
         }
 
-        if (!$this->receivesSvgContent($owner, false)) {
-            return;
+        if (!static::receivesSvgContent($owner, $filesystemUpdated)) {
+            return null;
         }
 
         $content = $owner->File->exists() ? $owner->File->getString() : null;
         if (empty($content)) {
-            return;
+            return null;
         }
 
         try {
-            # Memoised in SVGImage, so the sanitize in onBeforeWrite() does not parse it again
+            # Memoised in SVGImage, so later checks in the same write do not parse it again
             SVGImage::sanitize_content(
                 $content,
                 (bool)SVGImage::config()->get('sanitize_remove_remote_references')
             );
         } catch (UnsafeSVGException $e) {
             SVGImage::discard_unreferenced($owner->File->getFilename(), $owner->File->getHash());
-            $result->addError($e->getMessage());
+            return $e->getMessage();
         }
+
+        return null;
     }
 
     /**
@@ -102,10 +118,10 @@ class SVGImageExtension extends Extension
      * re-publishes the image it owns. Such already-public files are not touched; the README
      * shows how to find them.
      */
-    protected function refuseUnsanitizedPublish(File $owner, $result): void
+    protected static function unsanitizedPublishMessage(File $owner): ?string
     {
         if (!SVGImage::is_svg_filename($owner->getFilename()) || !$owner->File->exists()) {
-            return;
+            return null;
         }
 
         if (DB::get_schema()->hasTable('File_Live')) {
@@ -114,19 +130,19 @@ class SVGImageExtension extends Extension
                 [$owner->ID]
             )->record();
             if ($live && $live['FileFilename'] === $owner->getFilename() && $live['FileHash'] === $owner->getHash()) {
-                return;
+                return null;
             }
         }
 
         $content = $owner->File->getString();
         if ($content === null || $content === '' || SVGImage::is_sanitize_stable($content)) {
-            return;
+            return null;
         }
 
-        $result->addError(_t(
+        return _t(
             SVGImage::class . '.REFUSED_PUBLISH_UNSANITIZED',
             'This SVG was stored before sanitising was added; replace or re-upload it to publish.'
-        ));
+        );
     }
 
     /**
@@ -146,7 +162,20 @@ class SVGImageExtension extends Extension
         /** @var File $owner */
         $owner = $this->getOwner();
 
-        if (SVGImage::config()->get('sanitize_on_upload') && $this->receivesSvgContent($owner, true)) {
+        if (!SVGImage::config()->get('sanitize_on_upload')) {
+            return;
+        }
+
+        # The publish check normally runs in validation; repeat it for writes that skip it
+        if (static::isPublishWrite($owner)) {
+            $message = static::unsanitizedPublishMessage($owner);
+            if ($message !== null) {
+                throw SVGImage::validation_exception($message);
+            }
+            return;
+        }
+
+        if (static::receivesSvgContent($owner, true)) {
             SVGImage::sanitize_file($owner);
         }
     }
@@ -159,7 +188,7 @@ class SVGImageExtension extends Extension
      *                                is only in Name. True in onBeforeWrite(), where FileFilename
      *                                already holds it.
      */
-    protected function receivesSvgContent(File $owner, bool $filesystemUpdated): bool
+    protected static function receivesSvgContent(File $owner, bool $filesystemUpdated): bool
     {
         $isSvg = SVGImage::is_svg_filename($owner->getFilename());
 
@@ -167,7 +196,7 @@ class SVGImageExtension extends Extension
             return $isSvg;
         }
 
-        if ($this->isPublishWrite($owner)) {
+        if (static::isPublishWrite($owner)) {
             return false;
         }
 
@@ -175,7 +204,7 @@ class SVGImageExtension extends Extension
             return true;
         }
 
-        return $filesystemUpdated ? $this->becameSvg($owner) : $this->becomesSvg($owner);
+        return $filesystemUpdated ? static::becameSvg($owner) : static::becomesSvg($owner);
     }
 
     /**
@@ -222,7 +251,7 @@ class SVGImageExtension extends Extension
      * mode, and content a front-end form replaces must still be sanitized. Drafts are sanitized
      * on every content change (upload, replace, rename to .svg, rollback).
      */
-    protected function isPublishWrite(File $owner): bool
+    protected static function isPublishWrite(File $owner): bool
     {
         return self::$copyingToLive !== null && isset(self::$copyingToLive[$owner]);
     }
@@ -231,7 +260,7 @@ class SVGImageExtension extends Extension
      * During validation: the record is being renamed from another extension to .svg (Name
      * changed, FileFilename not yet).
      */
-    protected function becomesSvg(File $owner): bool
+    protected static function becomesSvg(File $owner): bool
     {
         return $owner->isChanged('Name', DataObject::CHANGE_VALUE)
             && SVGImage::is_svg_filename((string)$owner->Name)
@@ -244,7 +273,7 @@ class SVGImageExtension extends Extension
      * upload. File::onBeforeWrite() has already moved it in the store (updateFilesystem()) when
      * this runs, so FileFilename holds the new name.
      */
-    protected function becameSvg(File $owner): bool
+    protected static function becameSvg(File $owner): bool
     {
         if (!$owner->isChanged('FileFilename', DataObject::CHANGE_VALUE)) {
             return false;
