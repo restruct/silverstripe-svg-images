@@ -120,8 +120,15 @@ class SVGImage extends Image
      * unsanitized copy is removed from the asset store unless some record still references that
      * exact file (it cannot on a fresh upload, which is the case this exists for).
      *
+     * Fails closed: content that cannot be sanitized (see sanitize_content()) is refused with a
+     * ValidationException, and its bytes are removed from the asset store the same way. Up to 3.0
+     * such a file was kept exactly as uploaded, so a script the sanitizer never saw ran in the
+     * browser of whoever opened the file URL (#23).
+     *
      * @param File $file
      * @return bool True if the content was run through the sanitizer
+     * @throws \Exception A ValidationException (SilverStripe\ORM\ValidationException on
+     *                    Silverstripe 5, SilverStripe\Core\Validation\ValidationException on 6)
      */
     public static function sanitize_file(File $file): bool
     {
@@ -134,21 +141,26 @@ class SVGImage extends Image
             return false;
         }
 
-        $sanitizer = new Sanitizer();
-        $sanitizer->removeRemoteReferences((bool)static::config()->get('sanitize_remove_remote_references'));
+        $filename = $file->getFilename();
+        $dirtyHash = $file->getHash();
 
-        $cleanContent = $sanitizer->sanitize($content);
-
-        if ($cleanContent === false) {
-            // Sanitization failed - file may be malformed
-            return false;
+        try {
+            $cleanContent = static::sanitize_content(
+                $content,
+                (bool)static::config()->get('sanitize_remove_remote_references')
+            );
+        } catch (UnsafeSVGException $e) {
+            # Refused: nothing may keep serving these bytes. The record is never written (the
+            # exception aborts the write), but setFromString()/Upload already put the file in the
+            # store, where it would otherwise stay reachable by URL.
+            if ($dirtyHash && !static::tuple_is_referenced($filename, $dirtyHash)) {
+                Injector::inst()->get(AssetStore::class)->delete($filename, $dirtyHash);
+            }
+            throw static::validation_exception($e->getMessage());
         }
 
         // Only update if content changed
         if ($cleanContent !== $content) {
-            $filename = $file->getFilename();
-            $dirtyHash = $file->getHash();
-
             $file->setFromString($cleanContent, $filename);
 
             if ($dirtyHash && $dirtyHash !== $file->getHash() && !static::tuple_is_referenced($filename, $dirtyHash)) {
@@ -157,6 +169,80 @@ class SVGImage extends Image
         }
 
         return true;
+    }
+
+    /**
+     * Sanitize SVG markup, or refuse it.
+     *
+     * Refuses (throws) in two cases, both of which used to end with the input stored unchanged:
+     *
+     * - a DOCTYPE with an internal subset (`<!DOCTYPE svg [ ... ]>`). The sanitizer drops the
+     *   DOCTYPE before parsing, so any entity declared there becomes undefined and the parse
+     *   fails. Entity declarations are also how XML pulls in files and expands bombs, so they are
+     *   refused up front, with a message that says why. Older Illustrator "Save As SVG" exports
+     *   declare entities like this.
+     * - anything the sanitizer cannot parse (enshrined/svg-sanitize returns false), for example
+     *   nesting deeper than libxml's default limit of 256, which browsers render happily.
+     *
+     * @param string $content Raw SVG markup
+     * @param bool $removeRemoteReferences Passed to the sanitizer
+     * @return string The sanitized markup
+     * @throws UnsafeSVGException When the markup is refused; the message is meant for the uploader
+     */
+    public static function sanitize_content(string $content, bool $removeRemoteReferences = true): string
+    {
+        if (static::has_internal_subset($content)) {
+            throw new UnsafeSVGException(_t(
+                __CLASS__ . '.REFUSED_INTERNAL_SUBSET',
+                'This SVG declares entities in its DOCTYPE, which is not accepted for security reasons. '
+                . 'Export it again without editor data (in Illustrator: switch off "Preserve Illustrator '
+                . 'Editing Capabilities"), or use a PNG.'
+            ));
+        }
+
+        $sanitizer = new Sanitizer();
+        $sanitizer->removeRemoteReferences($removeRemoteReferences);
+        $cleanContent = $sanitizer->sanitize($content);
+
+        if ($cleanContent === false) {
+            throw new UnsafeSVGException(_t(
+                __CLASS__ . '.REFUSED_UNPARSABLE',
+                'This SVG could not be checked for unsafe content, so it was not saved. Export it '
+                . 'again from your editor, or use a PNG.'
+            ));
+        }
+
+        return $cleanContent;
+    }
+
+    /**
+     * Whether the markup has a DOCTYPE with an internal subset (`[ ... ]`).
+     *
+     * Walks the DOCTYPE's quoted literals instead of stopping at the first ">", so a ">" or "["
+     * inside a quoted public/system identifier cannot hide or fake a subset. Anything that slips
+     * past this still has to get through the sanitizer, which refuses what it cannot parse.
+     */
+    public static function has_internal_subset(string $content): bool
+    {
+        return (bool)preg_match(
+            '/<!DOCTYPE(?:\s+(?:"[^"]*"|\'[^\']*\'|[^\s"\'>\[]+))*\s*\[/i',
+            $content
+        );
+    }
+
+    /**
+     * A ValidationException, from whichever namespace this Silverstripe major has it in.
+     *
+     * Silverstripe 6 moved it from SilverStripe\ORM to SilverStripe\Core\Validation. Both accept a
+     * plain message, and DataObject::write() callers on both catch their own major's class.
+     */
+    protected static function validation_exception(string $message): \Exception
+    {
+        $class = class_exists('SilverStripe\\Core\\Validation\\ValidationException')
+            ? 'SilverStripe\\Core\\Validation\\ValidationException'
+            : 'SilverStripe\\ORM\\ValidationException';
+
+        return new $class($message);
     }
 
     /**

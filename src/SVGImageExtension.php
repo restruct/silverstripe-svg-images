@@ -30,6 +30,10 @@ class SVGImageExtension extends Extension
      *
      * Controlled by SVGImage.sanitize_on_upload and SVGImage.sanitize_remove_remote_references,
      * whatever the record's class.
+     *
+     * An SVG that cannot be sanitized aborts the write with a ValidationException (see
+     * SVGImage::sanitize_file()). Upload fields and AssetAdmin show its message to the uploader;
+     * code that writes files gets the exception.
      */
     public function onBeforeWrite(): void
     {

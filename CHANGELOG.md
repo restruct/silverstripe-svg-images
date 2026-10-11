@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **SVGs the sanitizer cannot parse are refused instead of stored as uploaded (#23).** Such a file
+  skipped sanitizing entirely, and a browser opening its URL ran its script on the site's origin
+  (stored XSS for any role that can upload an SVG). Two inputs did this reliably: an entity declared
+  in the DOCTYPE, and nesting deeper than 256 levels. Both are now refused with a message in the
+  Files area and in upload fields, a `ValidationException` for code that writes files, and the
+  uploaded bytes are removed from the asset store. A DOCTYPE with an internal subset is refused up
+  front; this includes older Illustrator "Save As SVG" exports. `sanitize_on_upload: false` still
+  switches all of this off.
+- Every SVG response now carries `Content-Security-Policy: default-src 'none'; style-src
+  'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened as a document
+  cannot run script even if the sanitizer misses something, or the file was stored before this
+  release. Sent by PHP for protected/draft files, and by the generated `assets/.htaccess` on
+  Apache (flush once to regenerate it). **nginx sites must add a location block**: see the README.
+- SVGs already in the asset store are not re-sanitized; there is no task for it.
+
+### Fixed
+
+- **`Resampled()`, `ResizedImage()` and `Quality()` no longer hand SVGs to the raster image
+  backend (#24).** With Intervention's Imagick driver the SVG was rasterised on the server on every
+  render (following local file paths it names) and the failure was never cached. `Resampled()` and
+  `Quality()` now return the SVG, as the README already claimed, and `ResizedImage()` (used for
+  images resized in WYSIWYG content) returns an SVG variant of the requested size. An SVG now
+  always gets a backend that cannot decode, so no other core image method can rasterise it either.
+
 ## 3.0.0 (2026-09-24)
 
 One line for Silverstripe 5 and 6 (PHP 8.1+), replacing both `1.x` (Silverstripe 4/5, branch

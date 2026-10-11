@@ -248,7 +248,21 @@ Sanitization runs from `SVGImageExtension::onBeforeWrite()`, which is on `File` 
 
 Until 3.0 the check sat in `SVGImage::onBeforeWrite()` behind `!isInDB()` and then bailed out on `!exists()`, so it never ran on any upload.
 
-If the sanitizer cannot parse a file, the upload is kept as it is.
+If the sanitizer cannot parse a file, or the file has a DOCTYPE with an internal subset,
+`SVGImage::sanitize_content()` throws `UnsafeSVGException`. `sanitize_file()` deletes the uploaded
+bytes from the store (same reference check) and throws a `ValidationException` (namespace per
+major), which aborts the write. No `Upload_Validator` is involved: a module cannot replace it
+without overriding the project's own `app/_config/mimevalidator.yml`, and both upload paths already
+show the write's message (`FileUploadReceiver` catches it; `LeftAndMain` turns it into a 403 whose
+text AssetAdmin shows on the tile). Up to 3.0.0 such a file was kept as uploaded (#23).
+
+## SVGs and the raster image backend
+
+`SVGManipulationTrait::getImageBackend()` returns an `SVGImageBackend` for SVGs, never the
+Injector's `Image_Backend`. Its `getImageResource()` is null, so `ImageManipulation::
+manipulateImage()` gives up before any callback runs (#24). It is a stub rather than `null`
+because Silverstripe 6's `ThumbnailGenerator` calls `getImageBackend()->
+getAllowsAnimationInManipulations()` without a null check.
 
 ## Silverstripe 5 and 6 from one codebase
 

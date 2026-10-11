@@ -64,7 +64,13 @@ Unlike raster images, SVG manipulation preserves the vector format by modifying 
 - `ScaleMaxHeight($height)` - Scale to max height, only if larger
 - `CropWidth($width)` / `CropHeight($height)` - Crop to a width/height from the centre, keeping the other dimension (never enlarges)
 - `CropRegion($x, $y, $width, $height)` - Crop to a region, in the original's coordinates
-- `Resampled()` - Returns the SVG unchanged (for compatibility with Image templates)
+- `ResizedImage($width, $height)` - Resize to exactly this width and height. The drawing keeps its proportions inside that box (it is not stretched). Core calls this for an image an editor resized in WYSIWYG content
+- `Resampled()` / `Quality($quality)` - Return the SVG unchanged (for compatibility with Image templates)
+
+An SVG is never handed to the site's raster image backend (Intervention with GD or Imagick): every
+manipulation above is done on the SVG markup, and any other core image method gets a backend that
+cannot decode anything, so it returns no variant. With the Imagick driver, an SVG would otherwise be
+rasterised on the server, following any local file path it names.
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
 
@@ -105,7 +111,14 @@ SVG files are automatically sanitized when they are written using [enshrined/svg
 - PHP tags
 - Other XSS vectors
 
-A file the sanitizer cannot parse is stored as uploaded.
+An SVG that cannot be sanitized is **refused**: the upload fails with a message, and nothing is
+stored. That covers a file the sanitizer cannot parse (for example nesting deeper than 256 levels)
+and any file that declares entities in its DOCTYPE (`<!DOCTYPE svg [ ... ]>`). Older Illustrator
+"Save As SVG" exports do the latter; export again with "Preserve Illustrator Editing Capabilities"
+switched off. Code that writes such a file gets a `ValidationException` from `write()`.
+
+> Up to 3.0.0, a file the sanitizer could not parse was stored exactly as uploaded, script included
+> (#23).
 
 > Up to 1.4.1 and 2.1.0, sanitization never actually ran, despite being enabled by default. SVGs
 > uploaded with those versions are unsanitized; see [UPGRADING.md](UPGRADING.md).
@@ -184,6 +197,50 @@ SVGs can expose attack vectors comparable to HTML/JS. This module mitigates risk
 - Only accept SVG uploads from trusted users
 - Use `<img>` tags rather than inline SVG when possible (provides more browser security)
 - Keep the sanitization enabled (default)
+
+### Content-Security-Policy for SVG files
+
+An SVG opened on its own (a direct link, "open in new tab") is a web page on your site's origin.
+As a second line of defence, every SVG is served with:
+
+```
+Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox
+X-Content-Type-Options: nosniff
+```
+
+`sandbox` blocks script and puts the file in its own origin; `default-src 'none'` stops it loading
+anything. `<img>` tags are not affected. The headers are sent only for `.svg`, because `sandbox`
+breaks the browsers' PDF viewer.
+
+- **Files served through PHP** (protected and draft files, and any file the web server passes to
+  Silverstripe) get the headers from `SVGResponseHeadersExtension`. Its `svg_response_headers`
+  config holds the values.
+- **Apache**: the module replaces the `assets/.htaccess` template with core's rules plus the SVG
+  headers (needs `mod_headers`). The file is regenerated on flush, so flush once after updating.
+- **nginx** ignores `.htaccess`, so public SVGs are served without the headers until you add them.
+  Put this location **before** any regex location that also matches `.svg` (such as a static-file
+  cache block), because nginx uses the first matching regex location. `add_header` inside a
+  location drops every `add_header` inherited from the server block, so repeat any you rely on:
+
+```nginx
+location ~* ^/assets/.+\.svg$ {
+    add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    # Optional: the caching your static-file block would have added
+    expires 365d;
+    # Protected, draft and missing files still go to Silverstripe, which sends the headers itself
+    try_files $uri /index.php?$query_string;
+}
+```
+
+Check it with `curl -I https://example.com/assets/<some-file>.svg`.
+
+### SVGs stored before the upgrade
+
+The module does not re-sanitize files that are already in the asset store, and has no task for it.
+Up to 3.0.0 a file the sanitizer could not parse was stored as uploaded, and before 3.0.0 nothing
+was sanitized at all (see [UPGRADING.md](UPGRADING.md)). The headers above protect those files when
+opened directly; if untrusted users could upload SVGs, review or re-upload them.
 
 For more information on SVG security risks, see [OWASP SVG Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SVG_Security_Cheat_Sheet.html).
 

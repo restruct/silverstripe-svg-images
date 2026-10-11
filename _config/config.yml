@@ -22,6 +22,19 @@ SilverStripe\Assets\Storage\DBFile:
   supported_images:
     - image/svg
 
+# SVGs opened as a document can run script on the site's origin (#23). Every SVG response gets a
+# Content-Security-Policy with `sandbox`: those PHP serves (protected/draft files) through this
+# extension, public ones Apache serves through the assets/.htaccess this template generates (it is
+# core's template plus the SVG headers; regenerated on flush). nginx ignores .htaccess: see README.
+SilverStripe\Assets\Flysystem\FlysystemAssetStore:
+  extensions:
+    - Restruct\Silverstripe\SVG\Extensions\SVGResponseHeadersExtension
+
+SilverStripe\Assets\Flysystem\PublicAssetAdapter:
+  server_configuration:
+    apache:
+      '.htaccess': Restruct\Silverstripe\SVG\PublicAssetAdapter_HTAccess
+
 # Optionally uncomment this to have has_one images loaded as SVG in case of .svg extension
 # You would also need to hack the core framework's ForeignKey class for this to work, see README
 # SilverStripe\Core\Injector\Injector:
