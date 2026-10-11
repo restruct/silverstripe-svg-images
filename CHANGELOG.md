@@ -6,18 +6,29 @@
 
 - **SVGs the sanitizer cannot parse are refused instead of stored as uploaded (#23).** Such a file
   skipped sanitizing entirely, and a browser opening its URL ran its script on the site's origin
-  (stored XSS for any role that can upload an SVG). Two inputs did this reliably: an entity declared
-  in the DOCTYPE, and nesting deeper than 256 levels. Both are now refused with a message in the
-  Files area and in upload fields, a `ValidationException` for code that writes files, and the
-  uploaded bytes are removed from the asset store. A DOCTYPE with an internal subset is refused up
-  front; this includes older Illustrator "Save As SVG" exports. `sanitize_on_upload: false` still
-  switches all of this off.
-- Every SVG response now carries `Content-Security-Policy: default-src 'none'; style-src
+  (stored XSS for any role that can upload an SVG). Inputs that did this: an entity declared in the
+  DOCTYPE, nesting deeper than 256 levels, a non-`<svg>` root and a self-referencing `<use>` (the
+  last two made the sanitizer throw: a 500 with the bytes left in the store). They are now refused
+  during validation with a message in the Files area and in upload fields, and a
+  `ValidationException` for code that writes files. The refused bytes are deleted from the asset
+  store unless a record still references them, and the record keeps its previous file. A DOCTYPE
+  with an internal subset is refused up front; this includes older Illustrator "Save As SVG"
+  exports. `sanitize_on_upload: false` still switches all of this off.
+- **Uppercase extensions (`logo.SVG`) were never sanitized.** Upload validation and the class
+  mapping lowercase the extension, so such a file became an `SVGImage`, but every SVG check in this
+  module compared the extension case-sensitively. All checks are now case-insensitive.
+- **A file renamed to `.svg` from another extension is now sanitized** (its hash does not change,
+  so it used to skip the check).
+- SVG responses now carry `Content-Security-Policy: default-src 'none'; style-src
   'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened as a document
   cannot run script even if the sanitizer misses something, or the file was stored before this
-  release. Sent by PHP for protected/draft files, and by the generated `assets/.htaccess` on
-  Apache (flush once to regenerate it). **nginx sites must add a location block**: see the README.
-- SVGs already in the asset store are not re-sanitized; there is no task for it.
+  release. Sent for files Silverstripe streams through PHP (protected and draft files), and by the
+  generated `assets/.htaccess` on Apache (flush once to regenerate it). **Not covered without your
+  action:** nginx (add the nested location from the README), a project with its own `.htaccess`
+  template (add the README's `FilesMatch` block), and protected files served by another module such
+  as `restruct/silverstripe-signed-asset-urls` or an X-Sendfile/X-Accel offload.
+- SVGs already in the asset store are not re-sanitized; there is no task for it. Publishing copies
+  the draft as it is.
 
 ### Fixed
 
@@ -25,8 +36,18 @@
   backend (#24).** With Intervention's Imagick driver the SVG was rasterised on the server on every
   render (following local file paths it names) and the failure was never cached. `Resampled()` and
   `Quality()` now return the SVG, as the README already claimed, and `ResizedImage()` (used for
-  images resized in WYSIWYG content) returns an SVG variant of the requested size. An SVG now
-  always gets a backend that cannot decode, so no other core image method can rasterise it either.
+  images resized in WYSIWYG content) returns an SVG variant of the requested size. `SVGImage` and
+  its variants always get a backend that cannot decode, and the module replaces core's
+  `ImageBackendFactory` service so a plain `Image` or `DBFile` holding an SVG gets one too (an SVG
+  uploaded into a `has_one Image` field made thumbnails through the raster backend before its
+  class was corrected). A site that sets its own `factory` for `Image_Backend` keeps the trait's
+  protection only.
+- `setAttribute()` on an SVG variant fatalled ("setOriginal() on null"), and with it every page
+  showing an SVG resized in WYSIWYG content. Variants now keep their original and its attributes,
+  as core's do.
+- Publishing a draft SVG no longer sanitizes it again during the Live write. For a draft stored
+  unsanitized before 3.0 that left the published record pointing at a file in the protected store,
+  which visitors could not load.
 
 ## 3.0.0 (2026-09-24)
 

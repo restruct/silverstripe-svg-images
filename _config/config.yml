@@ -22,10 +22,12 @@ SilverStripe\Assets\Storage\DBFile:
   supported_images:
     - image/svg
 
-# SVGs opened as a document can run script on the site's origin (#23). Every SVG response gets a
-# Content-Security-Policy with `sandbox`: those PHP serves (protected/draft files) through this
-# extension, public ones Apache serves through the assets/.htaccess this template generates (it is
-# core's template plus the SVG headers; regenerated on flush). nginx ignores .htaccess: see README.
+# SVGs opened as a document can run script on the site's origin (#23). SVG responses get a
+# Content-Security-Policy with `sandbox`: those Silverstripe streams through FlysystemAssetStore
+# (protected/draft files) through this extension, public ones Apache serves through the
+# assets/.htaccess this template generates (core's template plus the SVG headers; regenerated on
+# flush). Not covered here: nginx (ignores .htaccess), a project's own .htaccess template, and
+# modules that serve protected files another way. See README.
 SilverStripe\Assets\Flysystem\FlysystemAssetStore:
   extensions:
     - Restruct\Silverstripe\SVG\Extensions\SVGResponseHeadersExtension

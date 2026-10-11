@@ -67,10 +67,14 @@ Unlike raster images, SVG manipulation preserves the vector format by modifying 
 - `ResizedImage($width, $height)` - Resize to exactly this width and height. The drawing keeps its proportions inside that box (it is not stretched). Core calls this for an image an editor resized in WYSIWYG content
 - `Resampled()` / `Quality($quality)` - Return the SVG unchanged (for compatibility with Image templates)
 
-An SVG is never handed to the site's raster image backend (Intervention with GD or Imagick): every
-manipulation above is done on the SVG markup, and any other core image method gets a backend that
-cannot decode anything, so it returns no variant. With the Imagick driver, an SVG would otherwise be
-rasterised on the server, following any local file path it names.
+SVGs are kept away from the site's raster image backend (Intervention with GD or Imagick): every
+manipulation above is done on the SVG markup, and other core image methods on an SVG get a backend
+that cannot decode anything, so they return no variant. With the Imagick driver, an SVG would
+otherwise be rasterised on the server, following any local file path it names. This covers
+`SVGImage` and its variants always, and a plain `Image` or `DBFile` holding an SVG (an upload into a
+`has_one Image` field, before its class is corrected) through the module's replacement of core's
+`ImageBackendFactory` service. A site that configures its own `factory` for the `Image_Backend`
+service bypasses that replacement for plain `Image`/`DBFile` objects.
 
 Manipulated SVGs are stored as variants (just like raster image variants), so they're cached and only generated once.
 
@@ -111,11 +115,16 @@ SVG files are automatically sanitized when they are written using [enshrined/svg
 - PHP tags
 - Other XSS vectors
 
-An SVG that cannot be sanitized is **refused**: the upload fails with a message, and nothing is
-stored. That covers a file the sanitizer cannot parse (for example nesting deeper than 256 levels)
-and any file that declares entities in its DOCTYPE (`<!DOCTYPE svg [ ... ]>`). Older Illustrator
-"Save As SVG" exports do the latter; export again with "Preserve Illustrator Editing Capabilities"
-switched off. Code that writes such a file gets a `ValidationException` from `write()`.
+An SVG that cannot be sanitized is **refused**: the upload fails with a message, no File record is
+written, and the refused bytes are deleted from the asset store unless an existing record (another
+stage or version) still references that exact file. That covers a file the sanitizer cannot parse
+or throws on (for example nesting deeper than 256 levels, a root element that is not `<svg>`, a
+`<use>` that references its own ancestor) and any file that declares entities in its DOCTYPE
+(`<!DOCTYPE svg [ ... ]>`). Older Illustrator "Save As SVG" exports do the latter; export again with
+"Preserve Illustrator Editing Capabilities" switched off. Code that writes such a file gets a
+`ValidationException` from `write()`. The extension is matched in any case (`logo.SVG` too), and a
+file renamed to `.svg` from another extension is checked like an upload. Publishing copies the draft
+as it is and does not sanitize again.
 
 > Up to 3.0.0, a file the sanitizer could not parse was stored exactly as uploaded, script included
 > (#23).
@@ -201,7 +210,7 @@ SVGs can expose attack vectors comparable to HTML/JS. This module mitigates risk
 ### Content-Security-Policy for SVG files
 
 An SVG opened on its own (a direct link, "open in new tab") is a web page on your site's origin.
-As a second line of defence, every SVG is served with:
+As a second line of defence, SVGs are served with:
 
 ```
 Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox
@@ -212,26 +221,56 @@ X-Content-Type-Options: nosniff
 anything. `<img>` tags are not affected. The headers are sent only for `.svg`, because `sandbox`
 breaks the browsers' PDF viewer.
 
-- **Files served through PHP** (protected and draft files, and any file the web server passes to
-  Silverstripe) get the headers from `SVGResponseHeadersExtension`. Its `svg_response_headers`
-  config holds the values.
-- **Apache**: the module replaces the `assets/.htaccess` template with core's rules plus the SVG
+Where the headers come from, and where they do **not** unless you add them:
+
+- **Files Silverstripe streams through PHP** (protected and draft files, and any file the web
+  server passes to Silverstripe) get them from `SVGResponseHeadersExtension`, which hooks
+  `FlysystemAssetStore::getResponseFor()`. Its `svg_response_headers` config holds the values.
+  A module that serves protected files another way (for example
+  `restruct/silverstripe-signed-asset-urls`, or any X-Sendfile/X-Accel-Redirect offload) bypasses
+  that hook, so those responses get no CSP from this module.
+- **Apache**: the module selects its own `assets/.htaccess` template: core's rules plus the SVG
   headers (needs `mod_headers`). The file is regenerated on flush, so flush once after updating.
+  If your project sets its own template in `PublicAssetAdapter.server_configuration`, yours wins
+  and the headers are missing. Add this block to the generated file's template; in a `.ss`
+  template write the backslash twice (`\\.(?i:svg)`), because the template engine turns `\\.` into
+  `\.`:
+
+```apache
+<IfModule mod_headers.c>
+    <FilesMatch "\.(?i:svg)$">
+        Header set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        Header set X-Content-Type-Options "nosniff"
+    </FilesMatch>
+</IfModule>
+```
+
 - **nginx** ignores `.htaccess`, so public SVGs are served without the headers until you add them.
-  Put this location **before** any regex location that also matches `.svg` (such as a static-file
-  cache block), because nginx uses the first matching regex location. `add_header` inside a
-  location drops every `add_header` inherited from the server block, so repeat any you rely on:
+  Silverstripe's documented nginx config ("File Security" in the developer docs, same for 5 and 6)
+  serves assets from a prefix location, `location ^~ /assets/ { ... }`. The `^~` stops nginx from
+  checking regex locations, so a separate server-level `location ~* \.svg$` never matches an
+  asset. Nest the SVG location **inside** your existing `/assets/` block instead. A nested location
+  does not inherit `try_files`, and `add_header` in it drops every `add_header` from the levels
+  above, so repeat what you rely on:
 
 ```nginx
-location ~* ^/assets/.+\.svg$ {
-    add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    # Optional: the caching your static-file block would have added
-    expires 365d;
-    # Protected, draft and missing files still go to Silverstripe, which sends the headers itself
+location ^~ /assets/ {
+    sendfile on;
     try_files $uri /index.php?$query_string;
+
+    location ~* \.svg$ {
+        add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        # Protected, draft and missing files still go to Silverstripe, which sends the headers itself
+        try_files $uri /index.php?$query_string;
+    }
 }
 ```
+
+  (The developer docs write the fallback as `index.php?$query_string`; use the form your config
+  already has.) Without a `^~ /assets/` block, put the same inner `location` at server level, before
+  any other regex location that matches `.svg` (such as a static-file cache block): nginx uses the
+  first regex location that matches.
 
 Check it with `curl -I https://example.com/assets/<some-file>.svg`.
 

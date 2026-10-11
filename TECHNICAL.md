@@ -248,13 +248,29 @@ Sanitization runs from `SVGImageExtension::onBeforeWrite()`, which is on `File` 
 
 Until 3.0 the check sat in `SVGImage::onBeforeWrite()` behind `!isInDB()` and then bailed out on `!exists()`, so it never ran on any upload.
 
-If the sanitizer cannot parse a file, or the file has a DOCTYPE with an internal subset,
-`SVGImage::sanitize_content()` throws `UnsafeSVGException`. `sanitize_file()` deletes the uploaded
-bytes from the store (same reference check) and throws a `ValidationException` (namespace per
-major), which aborts the write. No `Upload_Validator` is involved: a module cannot replace it
-without overriding the project's own `app/_config/mimevalidator.yml`, and both upload paths already
-show the write's message (`FileUploadReceiver` catches it; `LeftAndMain` turns it into a 403 whose
-text AssetAdmin shows on the tile). Up to 3.0.0 such a file was kept as uploaded (#23).
+If the sanitizer cannot parse a file (returns false, throws, or returns no `<svg>` element), or
+the file has a DOCTYPE with an internal subset, `SVGImage::sanitize_content()` throws
+`UnsafeSVGException`. The refusal happens in **validation** (`updateValidate` on SS6, `validate` on
+SS5), which `DataObject::write()` runs before any `onBeforeWrite()`: `AssetControlExtension::
+onBeforeWrite()` (on every DataObject, ahead of this module's extension) deletes the record's
+previous file as replaced, so a refusal raised later lost the original of an unpublished draft.
+The refused bytes are deleted unless referenced, and the error makes `write()` throw a
+`ValidationException`. `onBeforeWrite()` still sanitizes (memoised, so the file is parsed once)
+and refuses as a backstop for writes that skip validation.
+
+No `Upload_Validator` is involved: a module cannot replace it without overriding the project's own
+`app/_config/mimevalidator.yml`, and both upload paths already show the write's message
+(`FileUploadReceiver` catches it; `LeftAndMain` turns it into a 403 whose text AssetAdmin shows on
+the tile). Up to 3.0.0 such a file was kept as uploaded (#23).
+
+What counts as new content: the first write, a changed `FileHash`, and a rename from another
+extension to `.svg` (`Name` changed during validation, `FileFilename` changed in `onBeforeWrite()`,
+after `File::updateFilesystem()`). Extensions are compared case-insensitively
+(`SVGImage::is_svg_extension()`), because core lowercases them for validation and class mapping.
+The Live write of a publish is skipped: `Versioned::writeToStage()` calls `forceChange()`, which
+flags `FileHash` as changed, and the module marks that write through the `onBeforeWriteToStage`/
+`onAfterWriteToStage` hooks. It is deliberately not "current stage is Live", because front-end
+requests write in Live mode.
 
 ## SVGs and the raster image backend
 
@@ -262,7 +278,13 @@ text AssetAdmin shows on the tile). Up to 3.0.0 such a file was kept as uploaded
 Injector's `Image_Backend`. Its `getImageResource()` is null, so `ImageManipulation::
 manipulateImage()` gives up before any callback runs (#24). It is a stub rather than `null`
 because Silverstripe 6's `ThumbnailGenerator` calls `getImageBackend()->
-getAllowsAnimationInManipulations()` without a null check.
+getAllowsAnimationInManipulations()` without a null check. It reads its size from the markup, not
+from its container, because a plain `Image`'s `getWidth()` asks its backend.
+
+Plain `Image`/`DBFile` objects holding an SVG get the same backend from `SVGImageBackendFactory`,
+which replaces core's `ImageBackendFactory` service (the `factory` of the `Image_Backend` service in
+assets' `_config/image.yml`, identical on SS5 and SS6). It matches by extension in any case, or by
+mime type.
 
 ## Silverstripe 5 and 6 from one codebase
 
