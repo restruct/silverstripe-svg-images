@@ -82,6 +82,21 @@ class SVGImageTest extends SapphireTest
         $this->assertSame('300x120', $svg->getDimensions());
     }
 
+    /**
+     * Regression: the viewBox is "min-x min-y width height", but the size was computed as
+     * width - min-x, so any SVG whose viewBox does not start at 0 0 reported a wrong size, and
+     * every manipulation scaled from that wrong ratio (ScaleWidth(300) of this one gave 300x133).
+     */
+    public function testViewBoxWithANonZeroOriginReportsItsOwnSize(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 100 50"><rect width="100" height="50"/></svg>');
+
+        $this->assertSame('100x50', $svg->getDimensions());
+        $this->assertSame(100, $svg->getWidth());
+        $this->assertSame(50, $svg->getHeight());
+        $this->assertSame('300x150', $this->sizeOf($svg->ScaleWidth(300)));
+    }
+
     public function testDimensionsFallBackToWidthAndHeightAttributes(): void
     {
         $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"></svg>');

@@ -408,8 +408,12 @@ class SVGImage extends Image
 
         if ($root->hasAttribute('viewBox')) {
             $vbox = preg_split('/[\s,]+/', $root->getAttribute('viewBox'));
-            $width = (float)$vbox[2] - (float)$vbox[0];
-            $height = (float)$vbox[3] - (float)$vbox[1];
+            # viewBox is "min-x min-y width height": the last two ARE the size, the first two
+            # only move the origin, so they must not be subtracted
+            // $width = (float)$vbox[2] - (float)$vbox[0];
+            // $height = (float)$vbox[3] - (float)$vbox[1];
+            $width = (float)($vbox[2] ?? 0);
+            $height = (float)($vbox[3] ?? 0);
         } elseif ($root->hasAttribute('width')) {
             $width = (float)$root->getAttribute('width');
             $height = (float)$root->getAttribute('height');
