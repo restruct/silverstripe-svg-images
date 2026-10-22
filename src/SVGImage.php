@@ -384,12 +384,26 @@ class SVGImage extends Image
      * Uses getString() to support both public and protected/draft assets.
      *
      * @param string|int $dim "string" for "WxH" format, 0 for width, 1 for height
-     * @return string|int|false
+     * @return string|int|float
      */
     public function getDimensions($dim = "string")
     {
-        if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
-            return parent::getDimensions($dim);
+        // if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
+        //     return parent::getDimensions($dim);
+        // }
+        # Image has no getDimensions() to defer to (not on Silverstripe 5 or 6), so the old
+        # parent:: call was a fatal BadMethodCallException for a record whose file is missing
+        if (!$this->exists()) {
+            return ($dim === "string") ? "File not found" : 0;
+        }
+        if (!static::is_svg_extension($this->getExtension())) {
+            # Not an SVG after all (renamed): let the image backend measure it
+            $width = parent::getWidth();
+            $height = parent::getHeight();
+            if ($dim === "string") {
+                return "{$width}x{$height}";
+            }
+            return ($dim === 0) ? $width : $height;
         }
 
         // Use getString() to support both public and protected/draft files

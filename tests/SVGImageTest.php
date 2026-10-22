@@ -138,6 +138,24 @@ class SVGImageTest extends SapphireTest
         $this->assertCount(1, $warnings, 'one warning per file, not one per getWidth()/getHeight() call');
     }
 
+    /**
+     * Regression: for a record whose file is missing from the store, getDimensions() fell
+     * through to parent::getDimensions(), which Image does not have on any supported major, so
+     * $Image.Width on such a record was a fatal "Call to undefined method".
+     */
+    public function testARecordWithoutItsFileReportsZeroRatherThanFailing(): void
+    {
+        $svg = SVGImage::create();
+        $svg->Name = 'gone.svg';
+        $svg->File->Filename = 'svgtest/gone.svg';
+        $svg->File->Hash = sha1('never stored');
+        $svg->write();
+        $this->assertFalse($svg->exists(), 'premise: the file is not in the store');
+
+        $this->assertSame(0, $svg->getWidth());
+        $this->assertSame(0, $svg->getHeight());
+    }
+
     public function testCmsThumbnailsUseTheSvgItself(): void
     {
         $svg = $this->makeSVG();
