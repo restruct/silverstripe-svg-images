@@ -8,6 +8,9 @@
   computed as `width - min-x` (and the height likewise), so `viewBox="10 10 100 50"` reported
   90x40, and every manipulation scaled from that ratio (`ScaleWidth(300)` gave 300x133 instead of
   300x150).
+- **`$Image.Width` on an `SVGImage` whose file is missing from the store was a fatal error**
+  (`getDimensions()` deferred to a parent method that does not exist). It now reports 0, as for an
+  SVG without dimensions.
 
 ### Added
 
