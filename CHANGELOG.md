@@ -2,6 +2,15 @@
 
 ## 3.2.0 (unreleased)
 
+### Changed
+
+- **An SVG's size now comes from its `width`/`height` attributes first, and from the `viewBox`
+  only when they are missing or relative (e.g. `100%`).** This is how browsers size an SVG and
+  how contao/imagine-svg (which does every resize and crop) always read it. Before, the viewBox
+  won: `viewBox="0 0 200 100" width="300" height="150"` reported 200x100 although it is shown at
+  300x150, and its variants were computed from 300x150. Templates that print `$Width`/`$Height`
+  of such an SVG now get the shown size. SVGs without width/height are unaffected.
+
 ### Fixed
 
 - **SVGs whose `viewBox` does not start at `0 0` reported the wrong size.** The width was

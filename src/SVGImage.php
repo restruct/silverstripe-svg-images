@@ -381,7 +381,7 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG dimensions from viewBox or width/height attributes.
+     * Get SVG dimensions: the width/height attributes, else the viewBox size.
      *
      * Uses getString() to support both public and protected/draft assets.
      *
@@ -519,7 +519,7 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG width from viewBox or width attribute.
+     * Get SVG width: the width attribute, else the viewBox width.
      *
      * @return int
      */
@@ -533,7 +533,7 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG height from viewBox or height attribute.
+     * Get SVG height: the height attribute, else the viewBox height.
      *
      * @return int
      */
@@ -554,7 +554,7 @@ class SVGImage extends Image
     // ScaleWidth, ScaleHeight, Fill, FillMax, Pad) and CMSThumbnail()/StripThumbnail() come from
     // SVGManipulationTrait, shared with SVGDBFile. SVGImage used to carry its own verbatim copies,
     // which is how the 1.4.1 FillMax fix reached chained calls (SVGDBFile) but never SVGImage
-    // itself. getWidth()/getHeight() stay here: SVGImage reads them from the viewBox via
+    // itself. getWidth()/getHeight() stay here: SVGImage reads them from the markup via
     // getDimensions(), and a class's own methods take precedence over a trait's.
 
     /**

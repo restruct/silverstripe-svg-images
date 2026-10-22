@@ -11,7 +11,7 @@ This module provides comprehensive SVG support in Silverstripe's asset managemen
 - **CMS thumbnail/preview support** for SVG files in AssetAdmin
 - **Real SVG manipulation** (resize, crop) that modifies viewBox/dimensions while preserving vectors
 - **SVG sanitization** on upload to remove potentially dangerous content
-- **Dimension parsing** from SVG viewBox/width/height attributes
+- **Dimension parsing** from the SVG's width/height attributes (as browsers size it), else its viewBox
 - **Automatic class handling** for SVGs uploaded through Image relations
 
 ## Version Compatibility
