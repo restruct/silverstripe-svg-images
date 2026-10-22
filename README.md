@@ -397,3 +397,7 @@ the module installed through a **symlinked** path repository (`tests/` is `expor
 normal install has no tests). `.github/workflows/ci.yml` builds exactly such a host for
 Silverstripe 5 and 6 and is the reference. `jonom/focuspoint` must be installed for the
 focus-point tests to run instead of skipping.
+
+Static analysis runs in CI (PHPStan level 5 with `cambis/silverstan`, on a Silverstripe 6 host;
+config in `phpstan.neon.dist`). Locally, from a host project with those two packages installed:
+`vendor/bin/phpstan analyse -c vendor/restruct/silverstripe-svg-images/phpstan.neon.dist`.

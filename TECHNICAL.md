@@ -294,7 +294,7 @@ mime type.
 
 The module supports both majors from one line. Most differences are ones the running major cannot tell apart (a return type the SS5 parent lacks, `#[Override]` only where the parent exists in both). Two need per-major code:
 
-- **`ClearSVGVariantsTask`**: the class is declared once, and its entry point (`run()` on SS5, `execute()`/`getOptions()` on SS6) comes from a trait declared per major in `ClearSVGVariantsTaskEntryPoint.php`. Two guarded task classes would not work: `TaskRunner` reflects every `BuildTask` descendant in the manifest. On SS6 the task declares no `--verbose` option of its own, because sake defines it globally and refuses a task that redeclares it.
+- **`ClearSVGVariantsTask`** (and `MigrateSVGImagesTask`, built the same way): the class is declared once, and its entry point (`run()` on SS5, `execute()`/`getOptions()` on SS6) comes from a trait declared per major in `ClearSVGVariantsTaskEntryPoint.php`. Two guarded task classes would not work: `TaskRunner` reflects every `BuildTask` descendant in the manifest. On SS6 the task declares no `--verbose` option of its own, because sake defines it globally and refuses a task that redeclares it.
 - **`/dev/svg-compare`**: registered with `DevelopmentAdmin` under `registered_controllers` on SS5 and `controllers` on SS6 (`_config/config.yml`, selected by whether `PolyOutput` exists), and `ArrayData`/`ArrayList` are resolved per major because SS6 moved them without an alias. The controller guards itself in `canInit()` (dev mode, or `ADMIN` / `ALL_DEV_ADMIN`): `DevelopmentAdmin` does not check access to a registered controller.
 
 ### BuildTask Changes

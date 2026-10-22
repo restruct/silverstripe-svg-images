@@ -1,0 +1,17 @@
+# Static analysis, run by CI (job "phpstan") from a host project that has the module installed.
+# cambis/silverstan teaches PHPStan Silverstripe's magic (config, extensions, has_one getters).
+parameters:
+  level: 5
+  paths:
+    - src
+  # The module guards against hook arguments and config values that do not match their
+  # docblocks (a YAML value can be null, a hook can be called by other code); trusting the
+  # docblocks would report every such guard as "always true".
+  treatPhpDocTypesAsCertain: false
+  ignoreErrors:
+    # One code base serves Silverstripe 5 and 6. Classes that moved between the two majors are
+    # referenced by both names, guarded by class_exists() or docblock unions, so the name of the
+    # other major is always "not found" in whichever host the analysis runs in.
+    -
+      identifier: class.notFound
+      message: '#SilverStripe\\(ORM|Core\\Validation)\\Validation(Exception|Result)#'
