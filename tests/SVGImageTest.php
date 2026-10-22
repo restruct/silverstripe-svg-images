@@ -265,6 +265,30 @@ class SVGImageTest extends SapphireTest
         $this->assertStringContainsString('<rect', $content);
     }
 
+    /**
+     * Script without a <script> element: event-handler attributes and javascript: links run just
+     * the same when the SVG is opened directly. Until now only the browser suite covered these.
+     */
+    public function testEventHandlersAndJavascriptLinksAreStrippedOnUpload(): void
+    {
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="10" height="10" onload="alert(1)">'
+            . '<rect width="10" height="10" onclick="alert(2)" onmouseover="alert(3)"/>'
+            . '<a href="javascript:alert(4)"><circle r="2"/></a>'
+            . '<a xlink:href="javascript:alert(5)"><circle r="3"/></a>'
+            . '</svg>'
+        );
+
+        $content = $svg->getString();
+        $this->assertStringNotContainsStringIgnoringCase('onload', $content);
+        $this->assertStringNotContainsStringIgnoringCase('onclick', $content);
+        $this->assertStringNotContainsStringIgnoringCase('onmouseover', $content);
+        $this->assertStringNotContainsStringIgnoringCase('javascript:', $content);
+        // the harmless drawing survives
+        $this->assertStringContainsString('<rect', $content);
+        $this->assertStringContainsString('<circle', $content);
+    }
+
     public function testSanitizeOnUploadCanBeSwitchedOff(): void
     {
         Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
