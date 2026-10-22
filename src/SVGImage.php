@@ -2,6 +2,8 @@
 
 namespace Restruct\Silverstripe\SVG;
 
+use Contao\ImagineSvg\Imagine;
+use Contao\ImagineSvg\SvgBox;
 use DOMDocument;
 use enshrined\svgSanitize\Sanitizer;
 use Override;
@@ -429,7 +431,17 @@ class SVGImage extends Image
 
         $root = $doc->documentElement;
 
-        if ($root->hasAttribute('viewBox')) {
+        # The width/height attributes are the size the SVG renders at; the viewBox only says which
+        # part of the drawing fills that size. That is how browsers size it, and how
+        # contao/imagine-svg (which performs every resize and crop) reads it. Only when the
+        # attributes are missing (or relative, e.g. 100%) does the viewBox size become the size.
+        # Before 3.2.0 the viewBox came first, so an original could report another size than the
+        # one it is shown at, and than the one its variants were computed from.
+        $absolute = $this->getRenderedSVGSize($content);
+
+        if ($absolute) {
+            [$width, $height] = $absolute;
+        } elseif ($root->hasAttribute('viewBox')) {
             $vbox = preg_split('/[\s,]+/', $root->getAttribute('viewBox'));
             # viewBox is "min-x min-y width height": the last two ARE the size, the first two
             # only move the origin, so they must not be subtracted
@@ -449,6 +461,33 @@ class SVGImage extends Image
         }
 
         return ($dim === 0) ? $width : $height;
+    }
+
+    /**
+     * The absolute size contao/imagine-svg derives from the width/height attributes (one of them
+     * plus the viewBox ratio is enough), with its unit handling; null when the SVG has no absolute
+     * size, which leaves the viewBox to decide.
+     *
+     * @return int[]|null [width, height]
+     */
+    protected function getRenderedSVGSize(string $content): ?array
+    {
+        if (!class_exists(Imagine::class)) {
+            return null;
+        }
+
+        try {
+            $box = (new Imagine())->load($content)->getSize();
+        } catch (\Throwable $e) {
+            # The DOM parse in getDimensions() succeeded, so leave the decision to its fallbacks
+            return null;
+        }
+
+        if ($box->getType() !== SvgBox::TYPE_ABSOLUTE) {
+            return null;
+        }
+
+        return [$box->getWidth(), $box->getHeight()];
     }
 
     /**
