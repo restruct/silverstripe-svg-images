@@ -602,7 +602,24 @@ class SVGImage extends Image
             return;
         }
 
+        foreach (static::migrate_svg_class() as $table => $count) {
+            DB::alteration_message("Migrated {$count} SVG file(s) to " . static::class . " in {$table}", 'changed');
+        }
+    }
+
+    /**
+     * Set ClassName to SVGImage on every .svg record that is not one yet, in File, File_Live and
+     * File_Versions: files uploaded before the module was installed are plain Image/File rows.
+     *
+     * Shared by dev/build (with auto_migrate_svg_class on) and MigrateSVGImagesTask (on demand).
+     *
+     * @param bool $apply false = only count what would change
+     * @return array<string,int> table => number of rows (to be) migrated, tables without any left out
+     */
+    public static function migrate_svg_class(bool $apply = true): array
+    {
         $svgClassName = static::class;
+        $migrated = [];
         $tables = ['File', 'File_Live', 'File_Versions'];
 
         foreach ($tables as $table) {
@@ -619,14 +636,20 @@ class SVGImage extends Image
             );
             $count = $result->value();
 
-            if ($count > 0) {
+            if ($count > 0 && $apply) {
                 DB::prepared_query(
                     "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"Name\" LIKE '%.svg' AND (\"ClassName\" IS NULL OR \"ClassName\" = '' OR \"ClassName\" != ?)",
                     [$svgClassName, $svgClassName]
                 );
-                DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
+                // DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
+            }
+            if ($count > 0) {
+                # Reported by the caller: dev/build and the task word it differently
+                $migrated[$table] = (int)$count;
             }
         }
+
+        return $migrated;
     }
 
     // =========================================================================
