@@ -75,14 +75,50 @@ class SVGImageTest extends SapphireTest
         $this->assertSame('SVG image', $svg->getFileType());
     }
 
-    public function testDimensionsComeFromTheViewBox(): void
+    // Until 3.2.0 the viewBox won over width/height; mic's decision (2026-10-22): the attributes
+    // are the rendered size, as in browsers and contao/imagine-svg, which does every resize.
+    // public function testDimensionsComeFromTheViewBox(): void
+    // {
+    //     // viewBox wins over width/height when both are present
+    //     $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120" width="30" height="12"></svg>');
+    //
+    //     $this->assertSame(300, $svg->getWidth());
+    //     $this->assertSame(120, $svg->getHeight());
+    //     $this->assertSame('300x120', $svg->getDimensions());
+    // }
+
+    public function testWidthAndHeightAttributesWinOverTheViewBox(): void
     {
-        // viewBox wins over width/height when both are present
-        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120" width="30" height="12"></svg>');
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="300" height="150"><rect width="200" height="100"/></svg>');
+
+        $this->assertSame('300x150', $svg->getDimensions());
+        // and the variants scale from that same size
+        $this->assertSame('600x300', $this->sizeOf($svg->ScaleWidth(600)));
+        $this->assertSame('80x40', $this->sizeOf($svg->Fit(80, 80)));
+        $this->assertSame('80x80', $this->sizeOf($svg->Fill(80, 80)));
+    }
+
+    public function testDimensionsComeFromTheViewBoxWithoutWidthAndHeight(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120"></svg>');
 
         $this->assertSame(300, $svg->getWidth());
         $this->assertSame(120, $svg->getHeight());
         $this->assertSame('300x120', $svg->getDimensions());
+    }
+
+    public function testOneAttributeAndTheViewBoxRatioGiveTheSize(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="300"></svg>');
+
+        $this->assertSame('300x150', $svg->getDimensions());
+    }
+
+    public function testRelativeAttributesLeaveTheSizeToTheViewBox(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="100%" height="100%"></svg>');
+
+        $this->assertSame('200x100', $svg->getDimensions());
     }
 
     /**
