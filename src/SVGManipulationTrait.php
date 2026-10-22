@@ -175,7 +175,9 @@ trait SVGManipulationTrait
      */
     protected function linkVariantToOriginal(SVGDBFile $file): SVGDBFile
     {
-        $file->initAttributes($this->attributes ?? []);
+        // $file->initAttributes($this->attributes ?? []);
+        # Always an array (declared in core's ImageManipulation, which passes it the same way)
+        $file->initAttributes($this->attributes);
         $file->setOriginal($this);
 
         return $file;
