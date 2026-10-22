@@ -4,6 +4,9 @@ namespace Restruct\Silverstripe\SVG\Tests;
 
 use Restruct\Silverstripe\SVG\SVGDBFile;
 use Restruct\Silverstripe\SVG\SVGImage;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -112,6 +115,27 @@ class SVGImageTest extends SapphireTest
         $this->assertSame(0, $svg->getWidth());
         $this->assertSame(0, $svg->getHeight());
         $this->assertSame('Scalable (no dimensions)', $svg->getDimensions());
+    }
+
+    /**
+     * An unparsable SVG used to report 0x0 with every libxml warning suppressed, so a broken
+     * upload looked exactly like a "scalable" one and nobody was told. It still reports 0x0 (the
+     * page must keep rendering), but leaves one warning in the log per file.
+     */
+    public function testAnUnparsableSVGIsLoggedOnce(): void
+    {
+        $handler = new TestHandler();
+        Injector::inst()->registerService(new Logger('svgtest', [$handler]), LoggerInterface::class);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" width="10"', 'svgtest/broken.svg');
+
+        $this->assertSame(0, $svg->getWidth());
+        $this->assertSame(0, $svg->getHeight());
+        $this->assertSame('Cannot parse SVG', $svg->getDimensions());
+
+        $warnings = array_filter($handler->getRecords(), fn($r) => str_contains((string)$r['message'], 'broken.svg'));
+        $this->assertCount(1, $warnings, 'one warning per file, not one per getWidth()/getHeight() call');
     }
 
     public function testCmsThumbnailsUseTheSvgItself(): void

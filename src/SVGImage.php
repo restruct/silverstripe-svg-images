@@ -5,6 +5,7 @@ namespace Restruct\Silverstripe\SVG;
 use DOMDocument;
 use enshrined\svgSanitize\Sanitizer;
 use Override;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -398,9 +399,17 @@ class SVGImage extends Image
         }
 
         $doc = new DOMDocument();
-        @$doc->loadXML($content); // Suppress warnings for malformed SVGs
+        // @$doc->loadXML($content); // Suppress warnings for malformed SVGs
+        # Collect libxml's errors instead of printing them (a broken file must not break the page),
+        # so the first one can go into the log below
+        $previous = libxml_use_internal_errors(true);
+        $doc->loadXML($content);
+        $error = libxml_get_last_error();
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
 
         if (!$doc->documentElement) {
+            $this->logUnparsable($error ? trim($error->message) : 'no root element');
             return ($dim === "string") ? "Cannot parse SVG" : 0;
         }
 
@@ -426,6 +435,34 @@ class SVGImage extends Image
         }
 
         return ($dim === 0) ? $width : $height;
+    }
+
+    /**
+     * Files already reported as unparsable in this request, keyed by filename and hash.
+     *
+     * @var array<string,bool>
+     */
+    protected static array $logged_unparsable = [];
+
+    /**
+     * Leave one warning in the log for an SVG that cannot be parsed. getDimensions() runs for
+     * every getWidth()/getHeight() call, so without the guard one broken file in a gallery would
+     * log dozens of identical lines per page view.
+     */
+    protected function logUnparsable(string $reason): void
+    {
+        $key = $this->getFilename() . '#' . $this->getHash();
+        if (isset(static::$logged_unparsable[$key])) {
+            return;
+        }
+        static::$logged_unparsable[$key] = true;
+
+        Injector::inst()->get(LoggerInterface::class)->warning(sprintf(
+            'SVG "%s" (File #%d) cannot be parsed, so it reports no dimensions: %s',
+            $this->getFilename(),
+            $this->ID,
+            $reason
+        ));
     }
 
     /**
