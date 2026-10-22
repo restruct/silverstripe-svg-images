@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.2.0 (unreleased)
+
+### Fixed
+
+- **SVGs whose `viewBox` does not start at `0 0` reported the wrong size.** The width was
+  computed as `width - min-x` (and the height likewise), so `viewBox="10 10 100 50"` reported
+  90x40, and every manipulation scaled from that ratio (`ScaleWidth(300)` gave 300x133 instead of
+  300x150).
+
+### Added
+
+- `MigrateSVGImagesTask`: migrates `.svg` records uploaded before the module was installed to
+  `SVGImage` once, with a dry run first, as an alternative to `auto_migrate_svg_class` on every
+  database build. `SVGImage::migrate_svg_class()` is the shared implementation.
+- An SVG that cannot be parsed is logged (one warning per file per request) instead of silently
+  reporting no dimensions.
+- PHPUnit coverage for event-handler attributes and `javascript:` links in uploads (until now
+  covered by the browser suite only), and a static-analysis (PHPStan) job in CI.
+
 ## 3.1.0 (2026-10-11)
 
 ### Security

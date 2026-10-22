@@ -3,6 +3,9 @@
 *Maintained by [Restruct](https://github.com/restruct). If this module saves you time, you can
 [support ongoing maintenance](https://github.com/sponsors/restruct).*
 
+Formerly published as `micschk/silverstripe-svg-images`: that package is abandoned, require
+`restruct/silverstripe-svg-images` instead (the PHP namespace has been the same since 1.1).
+
 This module provides comprehensive SVG support in Silverstripe's asset management system, including:
 
 - **CMS thumbnail/preview support** for SVG files in AssetAdmin
@@ -157,7 +160,20 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 ### Migrating existing SVG files
 
-If you have existing SVG files in your database that were uploaded before installing this module, enable auto-migration:
+SVG files uploaded before installing this module are plain `Image`/`File` records. To migrate them
+once, run the task (a dry run first, then for real):
+
+```bash
+# Silverstripe 6
+vendor/bin/sake tasks:MigrateSVGImagesTask              # dry run - shows what would change
+vendor/bin/sake tasks:MigrateSVGImagesTask --confirm    # actually migrate
+
+# Silverstripe 5
+vendor/bin/sake dev/tasks/MigrateSVGImagesTask
+vendor/bin/sake dev/tasks/MigrateSVGImagesTask confirm=1
+```
+
+Or let every database build do it, by enabling auto-migration:
 
 ```yaml
 Restruct\Silverstripe\SVG\SVGImage:
