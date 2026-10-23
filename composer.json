@@ -11,8 +11,9 @@
   "homepage": "https://github.com/restruct/silverstripe-svg-images",
   "authors": [
     {
-      "name": "Restruct web & apps",
-      "email": "dev@restruct.nl"
+      "name": "Restruct",
+      "email": "dev@restruct.nl",
+      "homepage": "https://restruct.nl"
     }
   ],
   "require": {
