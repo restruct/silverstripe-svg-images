@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Showcase fixture for the README screenshots: an original drawing, free to use. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="0.55" stop-color="#f472b6"/>
+      <stop offset="1" stop-color="#fdba74"/>
+    </linearGradient>
+    <linearGradient id="lake" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#sky)"/>
+  <circle cx="452" cy="212" r="62" fill="#fde68a"/>
+  <polygon points="0,290 120,150 210,240 300,120 420,260 500,190 640,300 640,400 0,400" fill="#4c1d95"/>
+  <polygon points="0,320 90,250 190,300 290,220 400,310 520,250 640,320 640,400 0,400" fill="#312e81"/>
+  <rect y="320" width="640" height="80" fill="url(#lake)"/>
+  <g fill="#fde68a" opacity="0.6">
+    <rect x="404" y="334" width="96" height="4" rx="2"/>
+    <rect x="420" y="348" width="64" height="4" rx="2"/>
+    <rect x="436" y="362" width="32" height="4" rx="2"/>
+  </g>
+  <g fill="#ffffff" opacity="0.85">
+    <circle cx="64" cy="48" r="2"/><circle cx="150" cy="80" r="1.5"/><circle cx="230" cy="36" r="2"/>
+    <circle cx="330" cy="70" r="1.5"/><circle cx="560" cy="44" r="2"/><circle cx="600" cy="96" r="1.5"/>
+  </g>
+</svg>
