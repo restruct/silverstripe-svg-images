@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Showcase fixture for the README screenshots: an original drawing, free to use. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <rect width="300" height="300" fill="#fff7ed"/>
+  <g fill="none" stroke-width="10">
+    <circle cx="150" cy="150" r="130" stroke="#fb923c"/>
+    <circle cx="150" cy="150" r="100" stroke="#f472b6"/>
+    <circle cx="150" cy="150" r="70" stroke="#a78bfa"/>
+    <circle cx="150" cy="150" r="40" stroke="#60a5fa"/>
+  </g>
+  <circle cx="150" cy="150" r="14" fill="#1e293b"/>
+</svg>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Showcase fixture for the README screenshots: an original drawing, free to use. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="320" height="200">
+  <rect width="320" height="200" rx="16" fill="#f8fafc"/>
+  <g fill="#cbd5e1">
+    <rect x="32" y="168" width="256" height="2"/>
+  </g>
+  <rect x="48" y="104" width="32" height="64" rx="4" fill="#38bdf8"/>
+  <rect x="96" y="72" width="32" height="96" rx="4" fill="#0ea5e9"/>
+  <rect x="144" y="120" width="32" height="48" rx="4" fill="#38bdf8"/>
+  <rect x="192" y="48" width="32" height="120" rx="4" fill="#0284c7"/>
+  <rect x="240" y="84" width="32" height="84" rx="4" fill="#0ea5e9"/>
+  <polyline points="64,92 112,60 160,108 208,36 256,72" fill="none" stroke="#f97316" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

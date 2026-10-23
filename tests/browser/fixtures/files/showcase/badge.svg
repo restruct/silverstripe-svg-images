@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Showcase fixture for the README screenshots: an original drawing, free to use. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <circle cx="120" cy="120" r="112" fill="#0f766e"/>
+  <circle cx="120" cy="120" r="92" fill="none" stroke="#99f6e4" stroke-width="6" stroke-dasharray="4 10"/>
+  <polygon points="120,48 140,100 196,100 151,132 168,186 120,153 72,186 89,132 44,100 100,100" fill="#fde047"/>
+</svg>
