@@ -200,11 +200,67 @@ jobs:
           if [ "${{ matrix.silverstripe }}" = "5" ]; then
             vendor/bin/sake dev/build flush=1
             vendor/bin/sake dev/tasks | grep -q ClearSVGVariantsTask
+            vendor/bin/sake dev/tasks | grep -q MigrateSVGImagesTask
           else
             vendor/bin/sake db:build --flush
             # Runs the task (dry run) through sake itself: catches a console-definition clash
             vendor/bin/sake tasks:ClearSVGVariantsTask -v
+            vendor/bin/sake tasks:MigrateSVGImagesTask
           fi
+
+  phpstan:
+    name: PHPStan (SS6)
+    runs-on: ubuntu-latest
+    # Silverstripe 6 only. The task entry points declare one trait per major behind a
+    # class_exists() switch (see ClearSVGVariantsTaskEntryPoint); PHPStan always reads the first
+    # (SS6) declaration, so an SS5 host reports that branch's SS6-only classes as missing.
+    steps:
+      - name: Check out the module
+        uses: actions/checkout@v7
+        with:
+          path: module
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, gd, zip, dom, xml, tokenizer, simplexml, ctype
+          tools: composer:v2
+          coverage: none
+
+      - name: Build a host project
+        # Same host shape as the test job (symlinked path repository), plus the analysers.
+        # cambis/silverstan resolves Silverstripe config and extensions from the host's manifest,
+        # so it needs a host, not the module on its own. No database: analysis never boots the app.
+        run: |
+          mkdir -p app-host
+          cd app-host
+          cat > composer.json <<JSON
+          {
+            "name": "restruct/ci-host",
+            "require": {
+              "silverstripe/recipe-cms": "^6",
+              "restruct/silverstripe-svg-images": "*",
+              "jonom/focuspoint": "*"
+            },
+            "require-dev": {
+              "phpstan/phpstan": "^2",
+              "phpstan/extension-installer": "^1.4",
+              "cambis/silverstan": "^2"
+            },
+            "repositories": [
+              { "type": "path", "url": "../module", "options": { "symlink": true } }
+            ],
+            "minimum-stability": "dev",
+            "prefer-stable": true,
+            "config": { "allow-plugins": true }
+          }
+          JSON
+          composer update --no-interaction --no-progress
+
+      - name: Analyse
+        working-directory: app-host
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G -c vendor/restruct/silverstripe-svg-images/phpstan.neon.dist
 
   lint:
     name: Lint PHP ${{ matrix.php }}

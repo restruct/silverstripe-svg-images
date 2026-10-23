@@ -2,9 +2,12 @@
 
 namespace Restruct\Silverstripe\SVG;
 
+use Contao\ImagineSvg\Imagine;
+use Contao\ImagineSvg\SvgBox;
 use DOMDocument;
 use enshrined\svgSanitize\Sanitizer;
 use Override;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -378,17 +381,31 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG dimensions from viewBox or width/height attributes.
+     * Get SVG dimensions: the width/height attributes, else the viewBox size.
      *
      * Uses getString() to support both public and protected/draft assets.
      *
      * @param string|int $dim "string" for "WxH" format, 0 for width, 1 for height
-     * @return string|int|false
+     * @return string|int|float
      */
     public function getDimensions($dim = "string")
     {
-        if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
-            return parent::getDimensions($dim);
+        // if (!static::is_svg_extension($this->getExtension()) || !$this->exists()) {
+        //     return parent::getDimensions($dim);
+        // }
+        # Image has no getDimensions() to defer to (not on Silverstripe 5 or 6), so the old
+        # parent:: call was a fatal BadMethodCallException for a record whose file is missing
+        if (!$this->exists()) {
+            return ($dim === "string") ? "File not found" : 0;
+        }
+        if (!static::is_svg_extension($this->getExtension())) {
+            # Not an SVG after all (renamed): let the image backend measure it
+            $width = parent::getWidth();
+            $height = parent::getHeight();
+            if ($dim === "string") {
+                return "{$width}x{$height}";
+            }
+            return ($dim === 0) ? $width : $height;
         }
 
         // Use getString() to support both public and protected/draft files
@@ -398,18 +415,40 @@ class SVGImage extends Image
         }
 
         $doc = new DOMDocument();
-        @$doc->loadXML($content); // Suppress warnings for malformed SVGs
+        // @$doc->loadXML($content); // Suppress warnings for malformed SVGs
+        # Collect libxml's errors instead of printing them (a broken file must not break the page),
+        # so the first one can go into the log below
+        $previous = libxml_use_internal_errors(true);
+        $doc->loadXML($content);
+        $error = libxml_get_last_error();
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
 
         if (!$doc->documentElement) {
+            $this->logUnparsable($error ? trim($error->message) : 'no root element');
             return ($dim === "string") ? "Cannot parse SVG" : 0;
         }
 
         $root = $doc->documentElement;
 
-        if ($root->hasAttribute('viewBox')) {
+        # The width/height attributes are the size the SVG renders at; the viewBox only says which
+        # part of the drawing fills that size. That is how browsers size it, and how
+        # contao/imagine-svg (which performs every resize and crop) reads it. Only when the
+        # attributes are missing (or relative, e.g. 100%) does the viewBox size become the size.
+        # Before 3.2.0 the viewBox came first, so an original could report another size than the
+        # one it is shown at, and than the one its variants were computed from.
+        $absolute = $this->getRenderedSVGSize($content);
+
+        if ($absolute) {
+            [$width, $height] = $absolute;
+        } elseif ($root->hasAttribute('viewBox')) {
             $vbox = preg_split('/[\s,]+/', $root->getAttribute('viewBox'));
-            $width = (float)$vbox[2] - (float)$vbox[0];
-            $height = (float)$vbox[3] - (float)$vbox[1];
+            # viewBox is "min-x min-y width height": the last two ARE the size, the first two
+            # only move the origin, so they must not be subtracted
+            // $width = (float)$vbox[2] - (float)$vbox[0];
+            // $height = (float)$vbox[3] - (float)$vbox[1];
+            $width = (float)($vbox[2] ?? 0);
+            $height = (float)($vbox[3] ?? 0);
         } elseif ($root->hasAttribute('width')) {
             $width = (float)$root->getAttribute('width');
             $height = (float)$root->getAttribute('height');
@@ -425,7 +464,62 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG width from viewBox or width attribute.
+     * The absolute size contao/imagine-svg derives from the width/height attributes (one of them
+     * plus the viewBox ratio is enough), with its unit handling; null when the SVG has no absolute
+     * size, which leaves the viewBox to decide.
+     *
+     * @return int[]|null [width, height]
+     */
+    protected function getRenderedSVGSize(string $content): ?array
+    {
+        if (!class_exists(Imagine::class)) {
+            return null;
+        }
+
+        try {
+            $box = (new Imagine())->load($content)->getSize();
+        } catch (\Throwable $e) {
+            # The DOM parse in getDimensions() succeeded, so leave the decision to its fallbacks
+            return null;
+        }
+
+        if ($box->getType() !== SvgBox::TYPE_ABSOLUTE) {
+            return null;
+        }
+
+        return [$box->getWidth(), $box->getHeight()];
+    }
+
+    /**
+     * Files already reported as unparsable in this request, keyed by filename and hash.
+     *
+     * @var array<string,bool>
+     */
+    protected static array $logged_unparsable = [];
+
+    /**
+     * Leave one warning in the log for an SVG that cannot be parsed. getDimensions() runs for
+     * every getWidth()/getHeight() call, so without the guard one broken file in a gallery would
+     * log dozens of identical lines per page view.
+     */
+    protected function logUnparsable(string $reason): void
+    {
+        $key = $this->getFilename() . '#' . $this->getHash();
+        if (isset(static::$logged_unparsable[$key])) {
+            return;
+        }
+        static::$logged_unparsable[$key] = true;
+
+        Injector::inst()->get(LoggerInterface::class)->warning(sprintf(
+            'SVG "%s" (File #%d) cannot be parsed, so it reports no dimensions: %s',
+            $this->getFilename(),
+            $this->ID,
+            $reason
+        ));
+    }
+
+    /**
+     * Get SVG width: the width attribute, else the viewBox width.
      *
      * @return int
      */
@@ -439,7 +533,7 @@ class SVGImage extends Image
     }
 
     /**
-     * Get SVG height from viewBox or height attribute.
+     * Get SVG height: the height attribute, else the viewBox height.
      *
      * @return int
      */
@@ -460,7 +554,7 @@ class SVGImage extends Image
     // ScaleWidth, ScaleHeight, Fill, FillMax, Pad) and CMSThumbnail()/StripThumbnail() come from
     // SVGManipulationTrait, shared with SVGDBFile. SVGImage used to carry its own verbatim copies,
     // which is how the 1.4.1 FillMax fix reached chained calls (SVGDBFile) but never SVGImage
-    // itself. getWidth()/getHeight() stay here: SVGImage reads them from the viewBox via
+    // itself. getWidth()/getHeight() stay here: SVGImage reads them from the markup via
     // getDimensions(), and a class's own methods take precedence over a trait's.
 
     /**
@@ -561,7 +655,24 @@ class SVGImage extends Image
             return;
         }
 
+        foreach (static::migrate_svg_class() as $table => $count) {
+            DB::alteration_message("Migrated {$count} SVG file(s) to " . static::class . " in {$table}", 'changed');
+        }
+    }
+
+    /**
+     * Set ClassName to SVGImage on every .svg record that is not one yet, in File, File_Live and
+     * File_Versions: files uploaded before the module was installed are plain Image/File rows.
+     *
+     * Shared by dev/build (with auto_migrate_svg_class on) and MigrateSVGImagesTask (on demand).
+     *
+     * @param bool $apply false = only count what would change
+     * @return array<string,int> table => number of rows (to be) migrated, tables without any left out
+     */
+    public static function migrate_svg_class(bool $apply = true): array
+    {
         $svgClassName = static::class;
+        $migrated = [];
         $tables = ['File', 'File_Live', 'File_Versions'];
 
         foreach ($tables as $table) {
@@ -578,14 +689,20 @@ class SVGImage extends Image
             );
             $count = $result->value();
 
-            if ($count > 0) {
+            if ($count > 0 && $apply) {
                 DB::prepared_query(
                     "UPDATE \"{$table}\" SET \"ClassName\" = ? WHERE \"Name\" LIKE '%.svg' AND (\"ClassName\" IS NULL OR \"ClassName\" = '' OR \"ClassName\" != ?)",
                     [$svgClassName, $svgClassName]
                 );
-                DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
+                // DB::alteration_message("Migrated {$count} SVG file(s) to {$svgClassName} in {$table}", 'changed');
+            }
+            if ($count > 0) {
+                # Reported by the caller: dev/build and the task word it differently
+                $migrated[$table] = (int)$count;
             }
         }
+
+        return $migrated;
     }
 
     // =========================================================================

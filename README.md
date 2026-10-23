@@ -3,12 +3,15 @@
 *Maintained by [Restruct](https://github.com/restruct). If this module saves you time, you can
 [support ongoing maintenance](https://github.com/sponsors/restruct).*
 
+Formerly published as `micschk/silverstripe-svg-images`: that package is abandoned, require
+`restruct/silverstripe-svg-images` instead (the PHP namespace has been the same since 1.1).
+
 This module provides comprehensive SVG support in Silverstripe's asset management system, including:
 
 - **CMS thumbnail/preview support** for SVG files in AssetAdmin
 - **Real SVG manipulation** (resize, crop) that modifies viewBox/dimensions while preserving vectors
 - **SVG sanitization** on upload to remove potentially dangerous content
-- **Dimension parsing** from SVG viewBox/width/height attributes
+- **Dimension parsing** from the SVG's width/height attributes (as browsers size it), else its viewBox
 - **Automatic class handling** for SVGs uploaded through Image relations
 
 ## Version Compatibility
@@ -157,7 +160,20 @@ Restruct\Silverstripe\SVG\SVGImage:
 
 ### Migrating existing SVG files
 
-If you have existing SVG files in your database that were uploaded before installing this module, enable auto-migration:
+SVG files uploaded before installing this module are plain `Image`/`File` records. To migrate them
+once, run the task (a dry run first, then for real):
+
+```bash
+# Silverstripe 6
+vendor/bin/sake tasks:MigrateSVGImagesTask              # dry run - shows what would change
+vendor/bin/sake tasks:MigrateSVGImagesTask --confirm    # actually migrate
+
+# Silverstripe 5
+vendor/bin/sake dev/tasks/MigrateSVGImagesTask
+vendor/bin/sake dev/tasks/MigrateSVGImagesTask confirm=1
+```
+
+Or let every database build do it, by enabling auto-migration:
 
 ```yaml
 Restruct\Silverstripe\SVG\SVGImage:
@@ -381,3 +397,7 @@ the module installed through a **symlinked** path repository (`tests/` is `expor
 normal install has no tests). `.github/workflows/ci.yml` builds exactly such a host for
 Silverstripe 5 and 6 and is the reference. `jonom/focuspoint` must be installed for the
 focus-point tests to run instead of skipping.
+
+Static analysis runs in CI (PHPStan level 5 with `cambis/silverstan`, on a Silverstripe 6 host;
+config in `phpstan.neon.dist`). Locally, from a host project with those two packages installed:
+`vendor/bin/phpstan analyse -c vendor/restruct/silverstripe-svg-images/phpstan.neon.dist`.

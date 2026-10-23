@@ -2,6 +2,7 @@
 
 namespace Restruct\Silverstripe\SVG\Tests;
 
+use enshrined\svgSanitize\Sanitizer;
 use Restruct\Silverstripe\SVG\SVGImage;
 use Restruct\Silverstripe\SVG\UnsafeSVGException;
 use SilverStripe\Assets\File;
@@ -311,9 +312,38 @@ class SVGUnsafeUploadTest extends SapphireTest
         $xhtmlRoot = '<html xmlns="http://www.w3.org/1999/xhtml"><body><script>alert(1)</script></body></html>';
         $prefixedRoot = '<s:svg xmlns:s="http://www.w3.org/2000/svg" width="10" height="10"><s:script>alert(1)</s:script></s:svg>';
 
-        $this->assertRefused($selfUse, 'self-use.svg');
+        // $this->assertRefused($selfUse, 'self-use.svg');
+        $this->assertSelfUseIsRefusedOrCleaned($selfUse);
         $this->assertRefused($xhtmlRoot, 'xhtml-root.svg');
         $this->assertRefused($prefixedRoot, 'prefixed-root.svg');
+    }
+
+    /**
+     * enshrined/svg-sanitize up to 1.0.x throws "Cannot add self usage" for a self-referencing
+     * <use>; 1.1 removes the <use> (and the script) and returns a clean document instead. Either
+     * outcome is safe, so the test follows the installed sanitizer: refused when it throws,
+     * otherwise stored without the script and without the self reference.
+     */
+    private function assertSelfUseIsRefusedOrCleaned(string $selfUse): void
+    {
+        try {
+            (new Sanitizer())->sanitize($selfUse);
+            $throws = false;
+        } catch (\LogicException $e) {
+            $throws = true;
+        }
+
+        if ($throws) {
+            $this->assertRefused($selfUse, 'self-use.svg');
+            return;
+        }
+
+        $svg = SVGImage::create();
+        $svg->setFromString($selfUse, 'svgtest/self-use.svg');
+        $svg->write();
+        $stored = SVGImage::get()->byID($svg->ID)->getString();
+        $this->assertStringNotContainsString('<script', $stored);
+        $this->assertStringNotContainsString('<use', $stored);
     }
 
     /**

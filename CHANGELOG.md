@@ -1,5 +1,36 @@
 # Changelog
 
+## 3.2.0 (2026-10-23)
+
+### Changed
+
+- **An SVG's size now comes from its `width`/`height` attributes first, and from the `viewBox`
+  only when they are missing or relative (e.g. `100%`).** This is how browsers size an SVG and
+  how contao/imagine-svg (which does every resize and crop) always read it. Before, the viewBox
+  won: `viewBox="0 0 200 100" width="300" height="150"` reported 200x100 although it is shown at
+  300x150, and its variants were computed from 300x150. Templates that print `$Width`/`$Height`
+  of such an SVG now get the shown size. SVGs without width/height are unaffected.
+
+### Fixed
+
+- **SVGs whose `viewBox` does not start at `0 0` reported the wrong size.** The width was
+  computed as `width - min-x` (and the height likewise), so `viewBox="10 10 100 50"` reported
+  90x40, and every manipulation scaled from that ratio (`ScaleWidth(300)` gave 300x133 instead of
+  300x150).
+- **`$Image.Width` on an `SVGImage` whose file is missing from the store was a fatal error**
+  (`getDimensions()` deferred to a parent method that does not exist). It now reports 0, as for an
+  SVG without dimensions.
+
+### Added
+
+- `MigrateSVGImagesTask`: migrates `.svg` records uploaded before the module was installed to
+  `SVGImage` once, with a dry run first, as an alternative to `auto_migrate_svg_class` on every
+  database build. `SVGImage::migrate_svg_class()` is the shared implementation.
+- An SVG that cannot be parsed is logged (one warning per file per request) instead of silently
+  reporting no dimensions.
+- PHPUnit coverage for event-handler attributes and `javascript:` links in uploads (until now
+  covered by the browser suite only), and a static-analysis (PHPStan) job in CI.
+
 ## 3.1.0 (2026-10-11)
 
 ### Security

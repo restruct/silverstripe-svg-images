@@ -5,8 +5,13 @@
   "license": "MIT",
   "keywords": [
     "silverstripe",
+    "silverstripe-module",
     "svg",
-    "image"
+    "image",
+    "vector",
+    "svg-sanitizer",
+    "assets",
+    "uploads"
   ],
   "homepage": "https://github.com/restruct/silverstripe-svg-images",
   "authors": [

@@ -4,6 +4,9 @@ namespace Restruct\Silverstripe\SVG\Tests;
 
 use Restruct\Silverstripe\SVG\SVGDBFile;
 use Restruct\Silverstripe\SVG\SVGImage;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetStore;
@@ -72,14 +75,65 @@ class SVGImageTest extends SapphireTest
         $this->assertSame('SVG image', $svg->getFileType());
     }
 
-    public function testDimensionsComeFromTheViewBox(): void
+    // Until 3.2.0 the viewBox won over width/height; mic's decision (2026-10-22): the attributes
+    // are the rendered size, as in browsers and contao/imagine-svg, which does every resize.
+    // public function testDimensionsComeFromTheViewBox(): void
+    // {
+    //     // viewBox wins over width/height when both are present
+    //     $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120" width="30" height="12"></svg>');
+    //
+    //     $this->assertSame(300, $svg->getWidth());
+    //     $this->assertSame(120, $svg->getHeight());
+    //     $this->assertSame('300x120', $svg->getDimensions());
+    // }
+
+    public function testWidthAndHeightAttributesWinOverTheViewBox(): void
     {
-        // viewBox wins over width/height when both are present
-        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120" width="30" height="12"></svg>');
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="300" height="150"><rect width="200" height="100"/></svg>');
+
+        $this->assertSame('300x150', $svg->getDimensions());
+        // and the variants scale from that same size
+        $this->assertSame('600x300', $this->sizeOf($svg->ScaleWidth(600)));
+        $this->assertSame('80x40', $this->sizeOf($svg->Fit(80, 80)));
+        $this->assertSame('80x80', $this->sizeOf($svg->Fill(80, 80)));
+    }
+
+    public function testDimensionsComeFromTheViewBoxWithoutWidthAndHeight(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120"></svg>');
 
         $this->assertSame(300, $svg->getWidth());
         $this->assertSame(120, $svg->getHeight());
         $this->assertSame('300x120', $svg->getDimensions());
+    }
+
+    public function testOneAttributeAndTheViewBoxRatioGiveTheSize(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="300"></svg>');
+
+        $this->assertSame('300x150', $svg->getDimensions());
+    }
+
+    public function testRelativeAttributesLeaveTheSizeToTheViewBox(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="100%" height="100%"></svg>');
+
+        $this->assertSame('200x100', $svg->getDimensions());
+    }
+
+    /**
+     * Regression: the viewBox is "min-x min-y width height", but the size was computed as
+     * width - min-x, so any SVG whose viewBox does not start at 0 0 reported a wrong size, and
+     * every manipulation scaled from that wrong ratio (ScaleWidth(300) of this one gave 300x133).
+     */
+    public function testViewBoxWithANonZeroOriginReportsItsOwnSize(): void
+    {
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 100 50"><rect width="100" height="50"/></svg>');
+
+        $this->assertSame('100x50', $svg->getDimensions());
+        $this->assertSame(100, $svg->getWidth());
+        $this->assertSame(50, $svg->getHeight());
+        $this->assertSame('300x150', $this->sizeOf($svg->ScaleWidth(300)));
     }
 
     public function testDimensionsFallBackToWidthAndHeightAttributes(): void
@@ -97,6 +151,45 @@ class SVGImageTest extends SapphireTest
         $this->assertSame(0, $svg->getWidth());
         $this->assertSame(0, $svg->getHeight());
         $this->assertSame('Scalable (no dimensions)', $svg->getDimensions());
+    }
+
+    /**
+     * An unparsable SVG used to report 0x0 with every libxml warning suppressed, so a broken
+     * upload looked exactly like a "scalable" one and nobody was told. It still reports 0x0 (the
+     * page must keep rendering), but leaves one warning in the log per file.
+     */
+    public function testAnUnparsableSVGIsLoggedOnce(): void
+    {
+        $handler = new TestHandler();
+        Injector::inst()->registerService(new Logger('svgtest', [$handler]), LoggerInterface::class);
+        Config::modify()->set(SVGImage::class, 'sanitize_on_upload', false);
+
+        $svg = $this->makeSVG('<svg xmlns="http://www.w3.org/2000/svg" width="10"', 'svgtest/broken.svg');
+
+        $this->assertSame(0, $svg->getWidth());
+        $this->assertSame(0, $svg->getHeight());
+        $this->assertSame('Cannot parse SVG', $svg->getDimensions());
+
+        $warnings = array_filter($handler->getRecords(), fn($r) => str_contains((string)$r['message'], 'broken.svg'));
+        $this->assertCount(1, $warnings, 'one warning per file, not one per getWidth()/getHeight() call');
+    }
+
+    /**
+     * Regression: for a record whose file is missing from the store, getDimensions() fell
+     * through to parent::getDimensions(), which Image does not have on any supported major, so
+     * $Image.Width on such a record was a fatal "Call to undefined method".
+     */
+    public function testARecordWithoutItsFileReportsZeroRatherThanFailing(): void
+    {
+        $svg = SVGImage::create();
+        $svg->Name = 'gone.svg';
+        $svg->File->Filename = 'svgtest/gone.svg';
+        $svg->File->Hash = sha1('never stored');
+        $svg->write();
+        $this->assertFalse($svg->exists(), 'premise: the file is not in the store');
+
+        $this->assertSame(0, $svg->getWidth());
+        $this->assertSame(0, $svg->getHeight());
     }
 
     public function testCmsThumbnailsUseTheSvgItself(): void
@@ -224,6 +317,30 @@ class SVGImageTest extends SapphireTest
         $content = $svg->getString();
         $this->assertStringNotContainsString('<script', $content);
         $this->assertStringContainsString('<rect', $content);
+    }
+
+    /**
+     * Script without a <script> element: event-handler attributes and javascript: links run just
+     * the same when the SVG is opened directly. Until now only the browser suite covered these.
+     */
+    public function testEventHandlersAndJavascriptLinksAreStrippedOnUpload(): void
+    {
+        $svg = $this->makeSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="10" height="10" onload="alert(1)">'
+            . '<rect width="10" height="10" onclick="alert(2)" onmouseover="alert(3)"/>'
+            . '<a href="javascript:alert(4)"><circle r="2"/></a>'
+            . '<a xlink:href="javascript:alert(5)"><circle r="3"/></a>'
+            . '</svg>'
+        );
+
+        $content = $svg->getString();
+        $this->assertStringNotContainsStringIgnoringCase('onload', $content);
+        $this->assertStringNotContainsStringIgnoringCase('onclick', $content);
+        $this->assertStringNotContainsStringIgnoringCase('onmouseover', $content);
+        $this->assertStringNotContainsStringIgnoringCase('javascript:', $content);
+        // the harmless drawing survives
+        $this->assertStringContainsString('<rect', $content);
+        $this->assertStringContainsString('<circle', $content);
     }
 
     public function testSanitizeOnUploadCanBeSwitchedOff(): void

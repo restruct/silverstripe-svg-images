@@ -53,7 +53,7 @@ class SVGImageBackend implements Image_Backend
     protected $size = null;
 
     /**
-     * Width as the SVG itself reports it (viewBox or width/height attributes), never by decoding.
+     * Width as the SVG itself reports it (width/height attributes, else viewBox), never by decoding.
      */
     public function getWidth(): int
     {

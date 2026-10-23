@@ -213,6 +213,9 @@ class SVGImageExtension extends Extension
      * A WeakMap keyed by the record object: extension instances are shared between owners, and
      * the entry must not outlive the record.
      *
+     * @internal runtime state, not configuration: without this tag the config system (and
+     * static analysis) would treat the private static as a config property
+     *
      * @var \WeakMap<File, true>|null
      */
     private static $copyingToLive = null;

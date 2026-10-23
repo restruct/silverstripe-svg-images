@@ -299,7 +299,9 @@ class SVGCompareController extends Controller
 
         // Delete folder only if empty (no other files inside)
         $folder = Folder::find($folderName);
-        if ($folder && $folder->myChildren()->count() === 0) {
+        // if ($folder && $folder->myChildren()->count() === 0) {
+        # File::find() (which Folder inherits) can return any File at that path, not only a Folder
+        if ($folder instanceof Folder && $folder->myChildren()->count() === 0) {
             $folder->doArchive();
         }
     }
