@@ -1,6 +1,6 @@
 {
   "name": "restruct/silverstripe-svg-images",
-  "description": "SVG image support for Silverstripe: uploads, CMS previews, real vector manipulation (resize/crop/pad) and sanitization",
+  "description": "SVG as real images in Silverstripe 5 and 6: CMS thumbnails and previews, vector resize/crop/fill in templates, and sanitized uploads",
   "type": "silverstripe-vendormodule",
   "license": "MIT",
   "keywords": [
