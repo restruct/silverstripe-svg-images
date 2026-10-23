@@ -10,7 +10,7 @@ stored. For Silverstripe 5 and 6.
 *Maintained by [Restruct](https://github.com/restruct). If this module saves you time, you can
 [support ongoing maintenance](https://github.com/sponsors/restruct).*
 
-## Why
+## Out of the box, an SVG is just a file
 
 Silverstripe does not accept SVG uploads out of the box: `svg` is not among the allowed file
 extensions. Allowing the extension is not enough. The SVG is then a plain file: no preview in the
@@ -26,7 +26,7 @@ This module makes SVG a first-class image type:
 - **Dimension parsing** from the SVG's width/height attributes (as browsers size it), else its viewBox
 - **Automatic class handling** for SVGs uploaded through Image relations
 
-## What it does
+## SVG as a first-class image
 
 ### SVGs in the CMS
 
