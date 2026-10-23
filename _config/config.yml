@@ -21,6 +21,10 @@ SilverStripe\Assets\File:
 SilverStripe\Assets\Storage\DBFile:
   supported_images:
     - image/svg
+    # The MIME type actually stored for an .svg upload (#28). With only image/svg, an original
+    # SVGImage (forTemplate, StripThumbnail, CMSThumbnail) rendered through its plain DBFile as a
+    # download link; variants were fine because SVGDBFile::getIsImage() works around it.
+    - image/svg+xml
 
 # SVGs opened as a document can run script on the site's origin (#23). SVG responses get a
 # Content-Security-Policy with `sandbox`: those Silverstripe streams through FlysystemAssetStore
