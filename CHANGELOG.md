@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.1 (2026-10-23)
+
+### Fixed
+
+- An original SVG (`forTemplate`, `StripThumbnail`, `CMSThumbnail`, `PreviewThumbnail`, e.g.
+  `Icon.StripThumbnail` in `summary_fields`) rendered as a download link instead of an `<img>`:
+  `DBFile.supported_images` listed `image/svg` but uploads are stored as `image/svg+xml` (#28).
+
 ## 3.2.0 (2026-10-23)
 
 ### Changed

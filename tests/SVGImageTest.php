@@ -203,6 +203,22 @@ class SVGImageTest extends SapphireTest
         $this->assertStringEndsWith('.svg', $svg->PreviewLink());
     }
 
+    /**
+     * #28: the original (not a variant) renders through its File field, a plain DBFile whose
+     * getIsImage() checks the stored MIME type (image/svg+xml) against DBFile.supported_images.
+     * Without a match it rendered as a download link, e.g. `Icon.StripThumbnail` in summary_fields.
+     */
+    public function testTheOriginalRendersAsAnImageTag(): void
+    {
+        $svg = $this->makeSVG();
+
+        $this->assertTrue($svg->File->getIsImage());
+        foreach (['forTemplate', 'StripThumbnail', 'CMSThumbnail', 'PreviewThumbnail'] as $method) {
+            $result = $method === 'forTemplate' ? $svg : $svg->$method();
+            $this->assertStringStartsWith('<img', trim((string) $result->forTemplate()), $method);
+        }
+    }
+
     public function testRawInlineReturnsTheMarkupAsHtml(): void
     {
         $svg = $this->makeSVG();
