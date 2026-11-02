@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.2 (2026-11-02)
+
+### Fixed
+
+- `FocusCropWidth()` / `FocusCropHeight()` on an SVG without a focus point returned it uncropped.
+  They now fall back to `CropWidth()` / `CropHeight()` from the centre, as `FocusFill()` falls back
+  to `Fill()` (#30).
+
 ## 3.2.1 (2026-10-23)
 
 ### Fixed
