@@ -2,6 +2,7 @@
 
 namespace Restruct\Silverstripe\SVG\Tests;
 
+use Restruct\Silverstripe\SVG\SVGDBFile;
 use Restruct\Silverstripe\SVG\SVGImage;
 use SilverStripe\Assets\Image;
 use SilverStripe\Assets\Storage\AssetContainer;
@@ -131,5 +132,57 @@ class SVGFocusPointExtensionTest extends SapphireTest
 
         $this->assertSame('50x50', $this->sizeOf($result));
         $this->assertStringContainsString('<svg', $result->getString());
+    }
+
+    /**
+     * The reference SVG as a bare SVGDBFile: no record behind it and no original to fail over to,
+     * so focuspoint's DBFile extension has no FocusPoint to give it. (A variant made by a
+     * manipulation does fail over to its original and gets a copy of that focus point.)
+     */
+    private function svgWithoutFocusPoint(): SVGDBFile
+    {
+        $svg = $this->makeSVG();
+        $file = SVGDBFile::createFromTuple([
+            'Filename' => $svg->getFilename(),
+            'Hash' => $svg->getHash(),
+            'Variant' => $svg->getVariant(),
+        ]);
+        $this->assertNull($file->FocusPoint, 'precondition: the file has no focus point');
+        $this->assertSame('200x150', $this->sizeOf($file));
+
+        return $file;
+    }
+
+    /**
+     * #30: without a focus point FocusCropWidth() falls back to CropWidth() (from the centre), as
+     * FocusFill() falls back to Fill(), instead of returning the image uncropped.
+     */
+    public function testFocusCropWidthWithoutFocusPointCropsFromTheCentre(): void
+    {
+        $file = $this->svgWithoutFocusPoint();
+
+        $result = $file->FocusCropWidth(100);
+
+        $this->assertSame('100x150', $this->sizeOf($result));
+        $this->assertNotSame($file->getString(), $result->getString(), 'the SVG is cropped, not returned as-is');
+        $this->assertSame($file->CropWidth(100)->getString(), $result->getString(), 'same markup as CropWidth(100)');
+        // Still never enlarges
+        $this->assertSame('200x150', $this->sizeOf($file->FocusCropWidth(500)));
+    }
+
+    /**
+     * #30: as above, for FocusCropHeight() and CropHeight().
+     */
+    public function testFocusCropHeightWithoutFocusPointCropsFromTheCentre(): void
+    {
+        $file = $this->svgWithoutFocusPoint();
+
+        $result = $file->FocusCropHeight(100);
+
+        $this->assertSame('200x100', $this->sizeOf($result));
+        $this->assertNotSame($file->getString(), $result->getString(), 'the SVG is cropped, not returned as-is');
+        $this->assertSame($file->CropHeight(100)->getString(), $result->getString(), 'same markup as CropHeight(100)');
+        // Still never enlarges
+        $this->assertSame('200x150', $this->sizeOf($file->FocusCropHeight(500)));
     }
 }
