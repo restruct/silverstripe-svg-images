@@ -4,6 +4,7 @@ namespace Restruct\Silverstripe\SVG\Tests;
 
 use Restruct\Silverstripe\SVG\Extensions\SVGResponseHeadersExtension;
 use SilverStripe\Assets\Dev\TestAssetStore;
+use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
 use SilverStripe\Assets\Flysystem\PublicAssetAdapter;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Control\HTTPResponse;
@@ -86,7 +87,13 @@ class SVGResponseHeadersTest extends SapphireTest
     }
 
     /**
-     * Only SVGs: `sandbox` would break the browser's PDF viewer for a PDF.
+     * Only SVGs: `sandbox` would break the browser's PDF viewer for a PDF, so this module adds its
+     * policy to SVG responses only.
+     *
+     * Core itself sends `Content-Security-Policy: default-src 'none'; sandbox` on every file PHP
+     * serves since silverstripe/assets 3.2.3 (silverstripe/silverstripe-assets#720, on purpose),
+     * so "no CSP at all" no longer holds on Silverstripe 6. What this module controls is that its
+     * own policy is not added: whatever the PNG gets is core's (null on Silverstripe 5).
      */
     public function testOtherFilesAreLeftAlone(): void
     {
@@ -97,7 +104,17 @@ class SVGResponseHeadersTest extends SapphireTest
         $response = $store->getResponseFor($store->getFileID($png->getFilename(), $png->getHash()));
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertNull($response->getHeader('Content-Security-Policy'));
+        // $this->assertNull($response->getHeader('Content-Security-Policy'));
+        $coreHeaders = FlysystemAssetStore::config()->get('file_response_headers') ?? [];
+        $this->assertSame(
+            $coreHeaders['Content-Security-Policy'] ?? null,
+            $response->getHeader('Content-Security-Policy'),
+            'a PNG gets core\'s policy, if any, never this module\'s'
+        );
+        $this->assertNotSame(
+            $this->expectedHeaders()['Content-Security-Policy'],
+            $response->getHeader('Content-Security-Policy')
+        );
     }
 
     public function testDenialsAndRedirectsAreLeftAlone(): void
@@ -123,8 +140,9 @@ class SVGResponseHeadersTest extends SapphireTest
     }
 
     /**
-     * Drift guard for the copied template: it must still contain core's template, rendered with
-     * the same data, so a security change to core's rules cannot be silently lost.
+     * Drift guard: the module's template must render core's template, with the same data, so a
+     * security change to core's rules cannot be silently lost (#32: a copy of core's rules missed
+     * SS-2026-003). Core's rules come first and unchanged; the SVG block only follows them.
      *
      * Rendered through the adapter's own renderTemplate() (protected), so both templates get
      * exactly what core gives them on either Silverstripe major.
@@ -139,5 +157,43 @@ class SVGResponseHeadersTest extends SapphireTest
 
         $this->assertStringContainsString('RewriteRule', $core, 'premise: core template found');
         $this->assertStringContainsString($core, $ours);
+        $this->assertStringStartsWith($core, ltrim($ours), 'core\'s rules come first, unchanged');
+    }
+
+    /**
+     * #32: the module's template includes core's template instead of copying it. A copy can only
+     * match one core release and silently drops the next security change, so any of core's rules
+     * written into this template's source fails here, whatever core's current rules are.
+     */
+    public function testHtaccessTemplateIncludesCoresTemplateInsteadOfCopyingIt(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__) . '/templates/Restruct/Silverstripe/SVG/PublicAssetAdapter_HTAccess.ss'
+        );
+
+        $this->assertStringContainsString(
+            '<% include SilverStripe\\Assets\\Flysystem\\PublicAssetAdapter_HTAccess %>',
+            $source
+        );
+        # Directives that only core's part of the file has; the SVG block uses none of them
+        foreach (['AddHandler', 'php_flag', 'RewriteEngine', 'RewriteRule', 'Require all denied'] as $directive) {
+            $this->assertStringNotContainsString($directive, $source, "copied core directive: {$directive}");
+        }
+    }
+
+    /**
+     * #32 / SS-2026-003: the generated assets/.htaccess denies direct access to executable
+     * scripts. Comes from core's template (silverstripe/assets 2.4.6 / 3.2.4 / 3.3.1 and later,
+     * the floor composer.json requires); a module template that drops it fails here.
+     */
+    public function testGeneratedHtaccessDeniesExecutableScripts(): void
+    {
+        $htaccess = file_get_contents(TestAssetStore::base_path() . '/.htaccess');
+
+        $this->assertStringContainsString(
+            "<FilesMatch \"(?i)\\.(?:php[0-9]*|phar|phtml|pht|inc)$\">\n    Require all denied\n</FilesMatch>",
+            $htaccess
+        );
+        $this->assertStringContainsString('<FilesMatch "\.(?i:svg)$">', $htaccess, 'premise: the module\'s file');
     }
 }
