@@ -1,6 +1,28 @@
 # Changelog
 
-## 3.2.2 (2026-11-02)
+## 3.2.2 (2026-11-03)
+
+### Security
+
+- **On Apache, `assets/.htaccess` lacked core's SS-2026-003 hardening** (#32). This module replaces
+  core's `.htaccess` template to add the SVG headers, and its template held a copy of core's rules.
+  silverstripe/assets 2.4.6 / 3.2.4 / 3.3.0 added a rule that denies direct access to executable
+  scripts (`<FilesMatch "(?i)\.(?:php[0-9]*|phar|phtml|pht|inc)$"> Require all denied`) and a
+  stricter error-page rule; with this module installed, a site did not get them, even after
+  updating silverstripe/assets. The template now renders core's template and appends the SVG
+  block, so core's rules, current and future, are always in the file. **Flush once after updating**
+  to regenerate `assets/.htaccess`, and check it contains `Require all denied`. nginx is not
+  affected (it ignores `.htaccess`). A project with its own template in
+  `PublicAssetAdapter.server_configuration` should include core's template the same way (README).
+
+### Changed
+
+- Requires `silverstripe/assets` `^2.4.6 || ~3.2.4 || ^3.3.2`, the releases with the SS-2026-003
+  fix (#32).
+- On Silverstripe 6, core now sends its own `Content-Security-Policy: default-src 'none'; sandbox`
+  on every file PHP serves, and serves SVGs as a download (silverstripe/silverstripe-assets#720).
+  This module still sends its SVG policy, which wins for SVGs; the tests were updated to the new
+  core behaviour.
 
 ### Fixed
 
