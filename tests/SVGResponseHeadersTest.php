@@ -55,6 +55,10 @@ class SVGResponseHeadersTest extends SapphireTest
 
     /**
      * A draft SVG lives in the protected store and is always streamed through PHP.
+     *
+     * With the installed core's own config: on Silverstripe 6 (silverstripe/assets 3.2.3+) core
+     * sends `default-src 'none'; sandbox` and that is what the SVG gets, as decided in #34; on
+     * Silverstripe 5 core sends no CSP and the SVG gets the module's.
      */
     public function testProtectedSvgResponseCarriesThePolicy(): void
     {
@@ -65,9 +69,15 @@ class SVGResponseHeadersTest extends SapphireTest
         $response = $store->getResponseFor($store->getFileID($svg->getFilename(), $svg->getHash()));
 
         $this->assertSame(200, $response->getStatusCode(), 'premise: the admin is served the draft file');
-        foreach ($this->expectedHeaders() as $header => $value) {
-            $this->assertSame($value, $response->getHeader($header), $header);
-        }
+        // foreach ($this->expectedHeaders() as $header => $value) {
+        //     $this->assertSame($value, $response->getHeader($header), $header);
+        // }
+        $core = FlysystemAssetStore::config()->get('file_response_headers')['Content-Security-Policy'] ?? null;
+        $expected = $core !== null && str_contains($core, 'sandbox')
+            ? $core
+            : $this->expectedHeaders()['Content-Security-Policy'];
+        $this->assertSame($expected, $response->getHeader('Content-Security-Policy'));
+        $this->assertSame('nosniff', $response->getHeader('X-Content-Type-Options'));
     }
 
     /**
