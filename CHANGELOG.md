@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.2.3 (2026-11-03)
+
+### Security
+
+- **On Silverstripe 6, a PHP-served SVG got the module's looser CSP instead of core's** (#34).
+  Since silverstripe/assets 3.2.3 (silverstripe/silverstripe-assets#720) core sends
+  `Content-Security-Policy: default-src 'none'; sandbox` on every file PHP serves.
+  `SVGResponseHeadersExtension` replaced it with `default-src 'none'; style-src 'unsafe-inline';
+  sandbox`, which allows inline styles. It now leaves a policy that already has `sandbox` alone, and
+  sends its own only where there is none (Silverstripe 5 / silverstripe/assets 2.x) or where the
+  existing one does not sandbox. Script was blocked either way (`sandbox`), and core serves SVGs as
+  a download there. The Apache `assets/.htaccess` SVG block (public files) keeps
+  `style-src 'unsafe-inline'` on purpose: core's `.htaccess` sends no CSP for public files and
+  Apache serves them inline, so an SVG opened directly is rendered and needs its inline styles;
+  `sandbox` and `default-src 'none'` still block script and every load. The same holds for the
+  nginx snippet in the README.
+
 ## 3.2.2 (2026-11-03)
 
 ### Security
