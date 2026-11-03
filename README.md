@@ -245,10 +245,14 @@ Where the headers come from, and where they do **not** unless you add them:
   A module that serves protected files another way (for example
   `restruct/silverstripe-signed-asset-urls`, or any X-Sendfile/X-Accel-Redirect offload) bypasses
   that hook, so those responses get no CSP from this module.
-- **Apache**: the module selects its own `assets/.htaccess` template: core's rules plus the SVG
-  headers (needs `mod_headers`). The file is regenerated on flush, so flush once after updating.
+- **Apache**: the module selects its own `assets/.htaccess` template, which renders core's template
+  and appends the SVG headers (needs `mod_headers`). Because core's rules are included rather than
+  copied, a security change to them reaches your site with the `silverstripe/assets` update. The
+  file is regenerated on flush, so flush once after updating either package.
   If your project sets its own template in `PublicAssetAdapter.server_configuration`, yours wins
-  and the headers are missing. Add this block to the generated file's template; in a `.ss`
+  and the headers are missing. Start your template with
+  `<% include SilverStripe\Assets\Flysystem\PublicAssetAdapter_HTAccess %>` so core's rules stay
+  current (as this module's template does), then add this block; in a `.ss`
   template write the backslash twice (`\\.(?i:svg)`), because the template engine turns `\\.` into
   `\.`:
 

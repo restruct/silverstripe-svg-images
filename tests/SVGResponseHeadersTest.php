@@ -123,8 +123,9 @@ class SVGResponseHeadersTest extends SapphireTest
     }
 
     /**
-     * Drift guard for the copied template: it must still contain core's template, rendered with
-     * the same data, so a security change to core's rules cannot be silently lost.
+     * Drift guard: the module's template must render core's template, with the same data, so a
+     * security change to core's rules cannot be silently lost (#32: a copy of core's rules missed
+     * SS-2026-003). Core's rules come first and unchanged; the SVG block only follows them.
      *
      * Rendered through the adapter's own renderTemplate() (protected), so both templates get
      * exactly what core gives them on either Silverstripe major.
@@ -139,5 +140,43 @@ class SVGResponseHeadersTest extends SapphireTest
 
         $this->assertStringContainsString('RewriteRule', $core, 'premise: core template found');
         $this->assertStringContainsString($core, $ours);
+        $this->assertStringStartsWith($core, ltrim($ours), 'core\'s rules come first, unchanged');
+    }
+
+    /**
+     * #32: the module's template includes core's template instead of copying it. A copy can only
+     * match one core release and silently drops the next security change, so any of core's rules
+     * written into this template's source fails here, whatever core's current rules are.
+     */
+    public function testHtaccessTemplateIncludesCoresTemplateInsteadOfCopyingIt(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__) . '/templates/Restruct/Silverstripe/SVG/PublicAssetAdapter_HTAccess.ss'
+        );
+
+        $this->assertStringContainsString(
+            '<% include SilverStripe\\Assets\\Flysystem\\PublicAssetAdapter_HTAccess %>',
+            $source
+        );
+        # Directives that only core's part of the file has; the SVG block uses none of them
+        foreach (['AddHandler', 'php_flag', 'RewriteEngine', 'RewriteRule', 'Require all denied'] as $directive) {
+            $this->assertStringNotContainsString($directive, $source, "copied core directive: {$directive}");
+        }
+    }
+
+    /**
+     * #32 / SS-2026-003: the generated assets/.htaccess denies direct access to executable
+     * scripts. Comes from core's template (silverstripe/assets 2.4.6 / 3.2.4 / 3.3.1 and later,
+     * the floor composer.json requires); a module template that drops it fails here.
+     */
+    public function testGeneratedHtaccessDeniesExecutableScripts(): void
+    {
+        $htaccess = file_get_contents(TestAssetStore::base_path() . '/.htaccess');
+
+        $this->assertStringContainsString(
+            "<FilesMatch \"(?i)\\.(?:php[0-9]*|phar|phtml|pht|inc)$\">\n    Require all denied\n</FilesMatch>",
+            $htaccess
+        );
+        $this->assertStringContainsString('<FilesMatch "\.(?i:svg)$">', $htaccess, 'premise: the module\'s file');
     }
 }
