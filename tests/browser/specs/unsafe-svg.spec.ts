@@ -1,3 +1,4 @@
+import type { Route } from '@playwright/test';
 import { test, expect, backgroundUrl } from './support';
 
 // #23: an SVG the sanitizer cannot parse used to be stored as uploaded, and its script ran when
@@ -92,21 +93,50 @@ test('an unsanitized SVG already in the store cannot run script when opened', as
     expect(res.headers()['x-content-type-options']).toBe('nosniff');
     expect(await res.text(), 'premise: the stored file still has its script').toMatch(/<script/);
 
-    // Opened as a document, in a page outside the console guard: Chromium logs the blocked
-    // script as a console error, which is the expected outcome here.
+    // Core serves SVGs as a download since silverstripe/assets 3.2.3 (silverstripe/silverstripe-assets#720,
+    // on purpose): a plain navigation then saves the file and never renders it, so no script runs
+    // on the site's origin. Check that where core does it (Silverstripe 6), then test this module's
+    // policy on its own below, with the download header taken off.
+    const disposition = res.headers()['content-disposition'] ?? '';
+    if (/^attachment/i.test(disposition)) {
+        const saved = await context.newPage();
+        const download = saved.waitForEvent('download');
+        await expect(saved.goto(url), 'core forces a download').rejects.toThrow(/Download is starting/);
+        expect((await download).url()).toBe(url);
+        await saved.close();
+    }
+
+    // Opened inline as a document: only the policy stands between the script and the origin.
+    // Without the download header the browser renders the SVG, as it does on Silverstripe 5 or any
+    // core that sends none (on Silverstripe 5 the route changes nothing).
+    const inline = async (route: Route, dropPolicy: boolean) => {
+        const upstream = await route.fetch();
+        const headers = { ...upstream.headers() };
+        delete headers['content-disposition'];
+        if (dropPolicy) {
+            delete headers['content-security-policy'];
+        }
+        await route.fulfill({ response: upstream, headers });
+    };
+
+    // In a page outside the console guard: Chromium logs the blocked script as a console error,
+    // which is the expected outcome here.
     const doc = await context.newPage();
+    // await doc.goto(url);
+    await doc.route(url, (route) => inline(route, false));
     await doc.goto(url);
     expect(await doc.evaluate(() => (window as any).svgbScript ?? null), 'inline <script> blocked').toBeNull();
     expect(await doc.evaluate(() => (window as any).svgbOnload ?? null), 'onload handler blocked').toBeNull();
 
     // Control: the same bytes without the policy DO run, so the check above can fail.
     const control = await context.newPage();
-    await control.route(url, async (route) => {
-        const upstream = await route.fetch();
-        const headers = { ...upstream.headers() };
-        delete headers['content-security-policy'];
-        await route.fulfill({ response: upstream, headers });
-    });
+    // await control.route(url, async (route) => {
+    //     const upstream = await route.fetch();
+    //     const headers = { ...upstream.headers() };
+    //     delete headers['content-security-policy'];
+    //     await route.fulfill({ response: upstream, headers });
+    // });
+    await control.route(url, (route) => inline(route, true));
     await control.goto(url);
     await expect.poll(() => control.evaluate(() => (window as any).svgbScript ?? null), { message: 'script runs without the policy' }).toBe(1);
 
