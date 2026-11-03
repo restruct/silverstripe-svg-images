@@ -4,6 +4,7 @@ namespace Restruct\Silverstripe\SVG\Tests;
 
 use Restruct\Silverstripe\SVG\Extensions\SVGResponseHeadersExtension;
 use SilverStripe\Assets\Dev\TestAssetStore;
+use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
 use SilverStripe\Assets\Flysystem\PublicAssetAdapter;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Control\HTTPResponse;
@@ -86,7 +87,13 @@ class SVGResponseHeadersTest extends SapphireTest
     }
 
     /**
-     * Only SVGs: `sandbox` would break the browser's PDF viewer for a PDF.
+     * Only SVGs: `sandbox` would break the browser's PDF viewer for a PDF, so this module adds its
+     * policy to SVG responses only.
+     *
+     * Core itself sends `Content-Security-Policy: default-src 'none'; sandbox` on every file PHP
+     * serves since silverstripe/assets 3.2.3 (silverstripe/silverstripe-assets#720, on purpose),
+     * so "no CSP at all" no longer holds on Silverstripe 6. What this module controls is that its
+     * own policy is not added: whatever the PNG gets is core's (null on Silverstripe 5).
      */
     public function testOtherFilesAreLeftAlone(): void
     {
@@ -97,7 +104,17 @@ class SVGResponseHeadersTest extends SapphireTest
         $response = $store->getResponseFor($store->getFileID($png->getFilename(), $png->getHash()));
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertNull($response->getHeader('Content-Security-Policy'));
+        // $this->assertNull($response->getHeader('Content-Security-Policy'));
+        $coreHeaders = FlysystemAssetStore::config()->get('file_response_headers') ?? [];
+        $this->assertSame(
+            $coreHeaders['Content-Security-Policy'] ?? null,
+            $response->getHeader('Content-Security-Policy'),
+            'a PNG gets core\'s policy, if any, never this module\'s'
+        );
+        $this->assertNotSame(
+            $this->expectedHeaders()['Content-Security-Policy'],
+            $response->getHeader('Content-Security-Policy')
+        );
     }
 
     public function testDenialsAndRedirectsAreLeftAlone(): void
