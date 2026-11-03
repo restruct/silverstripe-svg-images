@@ -245,11 +245,17 @@ Where the headers come from, and where they do **not** unless you add them:
 - **Files Silverstripe streams through PHP** (protected and draft files, and any file the web
   server passes to Silverstripe) get them from `SVGResponseHeadersExtension`, which hooks
   `FlysystemAssetStore::getResponseFor()`. Its `svg_response_headers` config holds the values.
+  On Silverstripe 6 (silverstripe/assets 3.2.3 and later) core already sends
+  `Content-Security-Policy: default-src 'none'; sandbox` on every file it serves, and serves SVGs
+  as a download; the module leaves a policy that has `sandbox` alone, so these SVGs carry core's
+  stricter value. The module's policy is sent where core sends none (Silverstripe 5).
   A module that serves protected files another way (for example
   `restruct/silverstripe-signed-asset-urls`, or any X-Sendfile/X-Accel-Redirect offload) bypasses
   that hook, so those responses get no CSP from this module.
 - **Apache**: the module selects its own `assets/.htaccess` template, which renders core's template
-  and appends the SVG headers (needs `mod_headers`). Because core's rules are included rather than
+  and appends the SVG headers (needs `mod_headers`). Core's `.htaccess` sends no CSP for public
+  files and lets Apache serve SVGs inline, so here the SVG is rendered when opened, and inline
+  styles stay allowed so ordinary SVGs from design tools still display. Because core's rules are included rather than
   copied, a security change to them reaches your site with the `silverstripe/assets` update. The
   file is regenerated on flush, so flush once after updating either package.
   If your project sets its own template in `PublicAssetAdapter.server_configuration`, yours wins

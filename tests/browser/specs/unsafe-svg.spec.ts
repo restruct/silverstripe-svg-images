@@ -89,7 +89,13 @@ test('an unsanitized SVG already in the store cannot run script when opened', as
     // Served with the policy (draft file, so through PHP: ProtectedFileController).
     const res = await page.request.get(url);
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-security-policy'] ?? '').toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    // expect(res.headers()['content-security-policy'] ?? '').toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    // #34: where core sends its own policy (silverstripe/assets 3.2.3+, the same releases that force
+    // the download checked below) the module leaves it alone; elsewhere the module's is sent.
+    const coreHardened = /^attachment/i.test(res.headers()['content-disposition'] ?? '');
+    expect(res.headers()['content-security-policy'] ?? '').toBe(
+        coreHardened ? "default-src 'none'; sandbox" : "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
     expect(res.headers()['x-content-type-options']).toBe('nosniff');
     expect(await res.text(), 'premise: the stored file still has its script').toMatch(/<script/);
 

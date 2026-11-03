@@ -8,6 +8,7 @@ use SilverStripe\Assets\Flysystem\FlysystemAssetStore;
 use SilverStripe\Assets\Flysystem\PublicAssetAdapter;
 use SilverStripe\Assets\Storage\AssetStore;
 use SilverStripe\Control\HTTPResponse;
+use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
 
@@ -54,6 +55,10 @@ class SVGResponseHeadersTest extends SapphireTest
 
     /**
      * A draft SVG lives in the protected store and is always streamed through PHP.
+     *
+     * With the installed core's own config: on Silverstripe 6 (silverstripe/assets 3.2.3+) core
+     * sends `default-src 'none'; sandbox` and that is what the SVG gets, as decided in #34; on
+     * Silverstripe 5 core sends no CSP and the SVG gets the module's.
      */
     public function testProtectedSvgResponseCarriesThePolicy(): void
     {
@@ -64,9 +69,15 @@ class SVGResponseHeadersTest extends SapphireTest
         $response = $store->getResponseFor($store->getFileID($svg->getFilename(), $svg->getHash()));
 
         $this->assertSame(200, $response->getStatusCode(), 'premise: the admin is served the draft file');
-        foreach ($this->expectedHeaders() as $header => $value) {
-            $this->assertSame($value, $response->getHeader($header), $header);
-        }
+        // foreach ($this->expectedHeaders() as $header => $value) {
+        //     $this->assertSame($value, $response->getHeader($header), $header);
+        // }
+        $core = FlysystemAssetStore::config()->get('file_response_headers')['Content-Security-Policy'] ?? null;
+        $expected = $core !== null && str_contains($core, 'sandbox')
+            ? $core
+            : $this->expectedHeaders()['Content-Security-Policy'];
+        $this->assertSame($expected, $response->getHeader('Content-Security-Policy'));
+        $this->assertSame('nosniff', $response->getHeader('X-Content-Type-Options'));
     }
 
     /**
@@ -112,6 +123,78 @@ class SVGResponseHeadersTest extends SapphireTest
             'a PNG gets core\'s policy, if any, never this module\'s'
         );
         $this->assertNotSame(
+            $this->expectedHeaders()['Content-Security-Policy'],
+            $response->getHeader('Content-Security-Policy')
+        );
+    }
+
+    /**
+     * The protected draft SVG's response, as getResponseFor() builds it with the current config.
+     */
+    private function protectedSvgResponse(string $name): HTTPResponse
+    {
+        $this->logInWithPermission('ADMIN');
+        $svg = $this->makeSVG(null, $name, false);
+
+        $store = Injector::inst()->get(AssetStore::class);
+        $response = $store->getResponseFor($store->getFileID($svg->getFilename(), $svg->getHash()));
+        $this->assertSame(200, $response->getStatusCode(), 'premise: the admin is served the draft file');
+
+        return $response;
+    }
+
+    /**
+     * #34: core sends `default-src 'none'; sandbox` on every file PHP serves since
+     * silverstripe/assets 3.2.3 (silverstripe/silverstripe-assets#720). That is stricter than this
+     * module's policy (no inline styles) and must not be replaced by it. Core's value is set here
+     * explicitly, so the case is tested on Silverstripe 5 too, where core sends none by default.
+     */
+    public function testCoreSandboxPolicyIsLeftAloneOnSvgs(): void
+    {
+        $core = "default-src 'none'; sandbox";
+        Config::modify()->set(FlysystemAssetStore::class, 'file_response_headers', [
+            'Cache-Control' => 'private',
+            'Content-Security-Policy' => $core,
+        ]);
+
+        $response = $this->protectedSvgResponse('core-csp.svg');
+
+        $this->assertSame($core, $response->getHeader('Content-Security-Policy'), 'core\'s policy, untouched');
+        $this->assertSame('nosniff', $response->getHeader('X-Content-Type-Options'));
+    }
+
+    /**
+     * #34, the other half: where core sends no CSP (silverstripe/assets 2.x, Silverstripe 5), the
+     * module's policy is still what protects a PHP-served SVG. Core's CSP is removed explicitly, so
+     * the case is tested on Silverstripe 6 too.
+     */
+    public function testWithoutCorePolicyTheModulesPolicyIsSent(): void
+    {
+        Config::modify()->set(FlysystemAssetStore::class, 'file_response_headers', [
+            'Cache-Control' => 'private',
+        ]);
+
+        $response = $this->protectedSvgResponse('no-core-csp.svg');
+
+        foreach ($this->expectedHeaders() as $header => $value) {
+            $this->assertSame($value, $response->getHeader($header), $header);
+        }
+    }
+
+    /**
+     * #34: only a policy that already sandboxes is left alone. One without `sandbox` (a project's
+     * own value for all files, say) does not stop script in an SVG opened as a document, so the
+     * module's policy replaces it.
+     */
+    public function testCorePolicyWithoutSandboxIsReplaced(): void
+    {
+        $response = new HTTPResponse('<svg/>', 200);
+        $response->addHeader('Content-Type', 'image/svg+xml');
+        $response->addHeader('Content-Security-Policy', "default-src 'self'");
+
+        (new SVGResponseHeadersExtension())->updateResponse($response, 'svgtest/x.svg', []);
+
+        $this->assertSame(
             $this->expectedHeaders()['Content-Security-Policy'],
             $response->getHeader('Content-Security-Policy')
         );
