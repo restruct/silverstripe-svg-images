@@ -67,10 +67,13 @@ class SVGFocusPointExtension extends Extension
             return null; // Let parent handle non-SVG
         }
 
-        $focusPoint = $this->owner->FocusPoint;
+        // $focusPoint = $this->owner->FocusPoint;
 
         // Don't upscale - if image is narrower than requested, return as-is
-        if (!$focusPoint || $this->owner->getWidth() <= $width) {
+        # Only this condition short-circuits. A missing focus point used to return here too, so
+        # applyFocusCropDimension()'s fallback to CropWidth() (from the centre) never ran (#30).
+//        if (!$focusPoint || $this->owner->getWidth() <= $width) {
+        if ($this->owner->getWidth() <= $width) {
             return $this->owner;
         }
 
@@ -90,10 +93,13 @@ class SVGFocusPointExtension extends Extension
             return null; // Let parent handle non-SVG
         }
 
-        $focusPoint = $this->owner->FocusPoint;
+        // $focusPoint = $this->owner->FocusPoint;
 
         // Don't upscale - if image is shorter than requested, return as-is
-        if (!$focusPoint || $this->owner->getHeight() <= $height) {
+        # Only this condition short-circuits. A missing focus point used to return here too, so
+        # applyFocusCropDimension()'s fallback to CropHeight() (from the centre) never ran (#30).
+//        if (!$focusPoint || $this->owner->getHeight() <= $height) {
+        if ($this->owner->getHeight() <= $height) {
             return $this->owner;
         }
 

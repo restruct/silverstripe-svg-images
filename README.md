@@ -116,6 +116,9 @@ When the FocusPoint module is installed, these additional methods become availab
 - `FocusCropWidth($width)` - Crop to width, centered on focus point
 - `FocusCropHeight($height)` - Crop to height, centered on focus point
 
+On an SVG without a focus point, `FocusFill`/`FocusFillMax` fall back to `Fill`/`FillMax`, and
+`FocusCropWidth`/`FocusCropHeight` to `CropWidth`/`CropHeight` (from the centre).
+
 ### Usage in templates
 
 ```html

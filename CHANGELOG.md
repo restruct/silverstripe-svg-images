@@ -24,6 +24,12 @@
   This module still sends its SVG policy, which wins for SVGs; the tests were updated to the new
   core behaviour.
 
+### Fixed
+
+- `FocusCropWidth()` / `FocusCropHeight()` on an SVG without a focus point returned it uncropped.
+  They now fall back to `CropWidth()` / `CropHeight()` from the centre, as `FocusFill()` falls back
+  to `Fill()` (#30).
+
 ## 3.2.1 (2026-10-23)
 
 ### Fixed
